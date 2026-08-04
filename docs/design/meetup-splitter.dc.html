@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0}
+body{background:#F2EEE5;font-family:Onest,system-ui,sans-serif;color:#16150F;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#D6431B;text-decoration:none}
+a:hover{color:#16150F}
+input,select,textarea,button{font-family:inherit;font-size:inherit;color:inherit}
+::placeholder{color:#A9A395}
+@keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;padding-bottom:80px">
+
+<header style="position:sticky;top:0;z-index:30;background:rgba(242,238,229,.88);backdrop-filter:blur(12px);border-bottom:1px solid rgba(22,21,15,.09)">
+<div style="max-width:1180px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+<div onClick="{{ goList }}" style="display:flex;align-items:center;gap:11px;cursor:pointer">
+<div style="width:34px;height:34px;border-radius:11px;background:#16150F;color:#F2EEE5;display:grid;place-items:center;font-family:Unbounded,sans-serif;font-weight:700;font-size:15px">Ф</div>
+<div style="font-family:Unbounded,sans-serif;font-weight:700;font-size:17px;letter-spacing:-.02em">Фонд встреч</div>
+</div>
+<div style="flex:1"></div>
+<sc-if value="{{ isMeeting }}" hint-placeholder-val="{{ true }}">
+<button onClick="{{ goList }}" style="border:1px solid rgba(22,21,15,.16);background:transparent;border-radius:999px;padding:9px 16px;font-size:14px;font-weight:500;cursor:pointer" style-hover="background:rgba(22,21,15,.06)">← Все встречи</button>
+</sc-if>
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+<button onClick="{{ newMeeting }}" style="border:0;background:#E04A22;color:#fff;border-radius:999px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 2px 0 #A8320F" style-hover="background:#C93F1B">+ Новая встреча</button>
+</sc-if>
+</div>
+</header>
+
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+<main style="max-width:1180px;margin:0 auto;padding:36px 28px 0;animation:fadeIn .25s ease">
+<h1 style="font-family:Unbounded,sans-serif;font-weight:700;font-size:clamp(30px,4vw,44px);letter-spacing:-.035em;margin:0 0 8px;line-height:1.05">Кто, кому и сколько</h1>
+<p style="margin:0 0 28px;font-size:16px;color:#6C6759;max-width:46ch;text-wrap:pretty">Скидываемся, гуляем, а потом считает приложение. Заходите в любую встречу и добавляйте расходы — переводы пересчитаются сами.</p>
+
+<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:22px">
+<input value="{{ query }}" onInput="{{ onQuery }}" placeholder="Поиск по встречам" style="flex:1 1 240px;min-width:200px;border:1px solid rgba(22,21,15,.14);background:#fff;border-radius:12px;padding:11px 15px;font-size:14px;outline:none">
+<select value="{{ filterPerson }}" onChange="{{ onFilterPerson }}" style="border:1px solid rgba(22,21,15,.14);background:#fff;border-radius:12px;padding:11px 13px;font-size:14px;cursor:pointer">
+<option value="">Все участники</option>
+<sc-for list="{{ allPeople }}" as="p" hint-placeholder-count="3"><option value="{{ p }}">{{ p }}</option></sc-for>
+</select>
+<select value="{{ sort }}" onChange="{{ onSort }}" style="border:1px solid rgba(22,21,15,.14);background:#fff;border-radius:12px;padding:11px 13px;font-size:14px;cursor:pointer">
+<option value="date-desc">Сначала новые</option>
+<option value="date-asc">Сначала старые</option>
+<option value="sum-desc">По сумме ↓</option>
+<option value="open-desc">Сначала незакрытые</option>
+</select>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px">
+<sc-for list="{{ cards }}" as="m" hint-placeholder-count="4">
+<article onClick="{{ m.onOpen }}" style="cursor:pointer;background:#fff;border-radius:20px;padding:5px;border:1.5px solid {{ m.line }};box-shadow:0 1px 2px rgba(22,21,15,.05);animation:riseIn .3s ease both" style-hover="box-shadow:0 10px 26px rgba(22,21,15,.10);transform:translateY(-2px)">
+<div style="height:112px;border-radius:16px;background:{{ m.cover }};display:flex;align-items:flex-end;justify-content:space-between;padding:12px;position:relative;overflow:hidden">
+<span style="font-size:34px;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.18))">{{ m.emoji }}</span>
+<span style="background:{{ m.badgeBg }};color:{{ m.badgeFg }};font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:999px;letter-spacing:.01em">{{ m.status }}</span>
+</div>
+<div style="padding:15px 13px 13px">
+<div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline">
+<h3 style="margin:0;font-size:18px;font-weight:600;letter-spacing:-.02em">{{ m.title }}</h3>
+<span style="font-size:12.5px;color:#8B8577;white-space:nowrap">{{ m.dateLabel }}</span>
+</div>
+<div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+<div style="display:flex">
+<sc-for list="{{ m.avatars }}" as="a" hint-placeholder-count="4">
+<span style="width:28px;height:28px;border-radius:50%;background:{{ a.bg }};display:grid;place-items:center;font-size:14px;margin-right:-7px;border:2px solid #fff">{{ a.emoji }}</span>
+</sc-for>
+</div>
+<div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">{{ m.total }}</div>
+</div>
+</div>
+</article>
+</sc-for>
+</div>
+
+<sc-if value="{{ noCards }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top:12px;border:1.5px dashed rgba(22,21,15,.18);border-radius:20px;padding:56px 24px;text-align:center">
+<div style="font-size:40px;margin-bottom:10px">🍃</div>
+<div style="font-size:17px;font-weight:600;margin-bottom:6px">Ничего не нашлось</div>
+<div style="font-size:14px;color:#6C6759;margin-bottom:18px">Поменяйте фильтры или заведите первую встречу.</div>
+<button onClick="{{ newMeeting }}" style="border:0;background:#16150F;color:#fff;border-radius:999px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer">Создать встречу</button>
+</div>
+</sc-if>
+</main>
+</sc-if>
+
+<sc-if value="{{ isMeeting }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:1180px;margin:0 auto;padding:28px 28px 0;animation:fadeIn .25s ease">
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px;align-items:start">
+<div onDragOver="{{ onDragOver }}" onDrop="{{ onDropCover }}" style="position:relative;min-height:214px;border-radius:22px;background:{{ coverBg }};background-size:cover;background-position:center;display:grid;place-items:center;border:1.5px dashed rgba(22,21,15,.20);overflow:hidden">
+<sc-if value="{{ noCover }}" hint-placeholder-val="{{ true }}">
+<div style="text-align:center;padding:24px">
+<div style="font-size:34px;margin-bottom:8px">{{ meetingEmoji }}</div>
+<div style="font-size:14px;font-weight:600">Перетащите фото встречи</div>
+<div style="font-size:12.5px;color:#6C6759;margin-top:4px">jpg, png — просто бросьте сюда</div>
+</div>
+</sc-if>
+</div>
+<div>
+<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+<span style="background:{{ badgeBg }};color:{{ badgeFg }};font-size:12px;font-weight:600;padding:6px 12px;border-radius:999px">{{ statusText }}</span>
+<span style="font-size:13px;color:#8B8577">{{ meetingDate }}</span>
+</div>
+<h1 style="font-family:Unbounded,sans-serif;font-weight:700;font-size:clamp(28px,3.4vw,40px);letter-spacing:-.035em;margin:0 0 10px;line-height:1.05">{{ meetingTitle }}</h1>
+<p style="margin:0 0 18px;font-size:15.5px;color:#4B4739;line-height:1.55;text-wrap:pretty">{{ meetingDesc }}</p>
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+<div style="background:#fff;border:1px solid rgba(22,21,15,.10);border-radius:14px;padding:11px 15px;min-width:120px">
+<div style="font-size:11.5px;color:#8B8577;font-weight:500;letter-spacing:.02em;text-transform:uppercase">Потратили</div>
+<div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:19px;margin-top:3px">{{ statTotal }}</div>
+</div>
+<div style="background:#fff;border:1px solid rgba(22,21,15,.10);border-radius:14px;padding:11px 15px;min-width:120px">
+<div style="font-size:11.5px;color:#8B8577;font-weight:500;letter-spacing:.02em;text-transform:uppercase">На человека</div>
+<div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:19px;margin-top:3px">{{ statPer }}</div>
+</div>
+<div style="background:#fff;border:1px solid rgba(22,21,15,.10);border-radius:14px;padding:11px 15px;min-width:120px">
+<div style="font-size:11.5px;color:#8B8577;font-weight:500;letter-spacing:.02em;text-transform:uppercase">Осталось переводов</div>
+<div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:19px;margin-top:3px;color:{{ badgeFg }}">{{ statLeft }}</div>
+</div>
+</div>
+</div>
+</div>
+
+<section style="margin-top:34px">
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+<h2 style="font-family:Unbounded,sans-serif;font-weight:600;font-size:20px;letter-spacing:-.025em;margin:0">Участники</h2>
+<button onClick="{{ addPerson }}" style="border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:600;cursor:pointer" style-hover="background:#16150F;color:#fff;border-color:#16150F">+ Участник</button>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));gap:12px">
+<sc-for list="{{ people }}" as="p" hint-placeholder-count="5">
+<div style="background:#fff;border:1px solid rgba(22,21,15,.10);border-radius:16px;padding:13px 14px;display:flex;gap:12px;align-items:center">
+<span style="width:42px;height:42px;border-radius:50%;background:{{ p.bg }};display:grid;place-items:center;font-size:21px;flex:none">{{ p.emoji }}</span>
+<div style="flex:1;min-width:0">
+<div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</div>
+<div style="font-size:12.5px;color:#8B8577;margin-top:2px">внёс {{ p.paid }}</div>
+<div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:{{ p.netColor }};margin-top:3px">{{ p.netLabel }}</div>
+</div>
+<button onClick="{{ p.onEdit }}" title="Редактировать" style="border:0;background:transparent;cursor:pointer;color:#A9A395;font-size:15px;padding:4px" style-hover="color:#16150F">✎</button>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section style="margin-top:34px;display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:22px;align-items:start">
+<div>
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+<h2 style="font-family:Unbounded,sans-serif;font-weight:600;font-size:20px;letter-spacing:-.025em;margin:0">История</h2>
+<div style="display:flex;gap:8px">
+<button onClick="{{ addExpense }}" style="border:0;background:#E04A22;color:#fff;border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 0 #A8320F" style-hover="background:#C93F1B">+ Расход</button>
+<button onClick="{{ addTransfer }}" style="border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:999px;padding:9px 15px;font-size:13.5px;font-weight:600;cursor:pointer" style-hover="background:rgba(22,21,15,.06)">+ Перевод</button>
+</div>
+</div>
+<div style="background:#fff;border:1px solid rgba(22,21,15,.10);border-radius:18px;overflow:hidden">
+<sc-for list="{{ entries }}" as="e" hint-placeholder-count="4">
+<div style="display:flex;gap:12px;align-items:center;padding:13px 15px;border-bottom:1px solid rgba(22,21,15,.07)">
+<span style="width:36px;height:36px;border-radius:50%;background:{{ e.bg }};display:grid;place-items:center;font-size:18px;flex:none">{{ e.emoji }}</span>
+<div style="flex:1;min-width:0">
+<div style="font-size:14.5px;font-weight:600">{{ e.who }}</div>
+<div style="font-size:12.5px;color:#8B8577;margin-top:2px">{{ e.sub }}</div>
+</div>
+<div style="text-align:right">
+<div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px;color:{{ e.amtColor }}">{{ e.amount }}</div>
+<div style="font-size:11.5px;color:#A9A395;margin-top:2px">{{ e.time }}</div>
+</div>
+<button onClick="{{ e.onDelete }}" title="Удалить" style="border:0;background:transparent;cursor:pointer;color:#CFC9BB;font-size:15px;padding:4px" style-hover="color:#C3402E">✕</button>
+</div>
+</sc-for>
+<sc-if value="{{ noEntries }}" hint-placeholder-val="{{ true }}">
+<div style="padding:44px 22px;text-align:center">
+<div style="font-size:34px;margin-bottom:8px">🧾</div>
+<div style="font-size:15.5px;font-weight:600;margin-bottom:5px">Пока ни одной траты</div>
+<div style="font-size:13.5px;color:#6C6759;margin-bottom:16px;text-wrap:pretty">Добавьте первый расход — и внизу сразу появится, кто кому переводит.</div>
+<button onClick="{{ addExpense }}" style="border:0;background:#16150F;color:#fff;border-radius:999px;padding:10px 18px;font-size:13.5px;font-weight:600;cursor:pointer">Добавить расход</button>
+</div>
+</sc-if>
+</div>
+</div>
+
+<div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+<h2 style="font-family:Unbounded,sans-serif;font-weight:600;font-size:20px;letter-spacing:-.025em;margin:0">Кто кому должен</h2>
+<div style="display:flex;background:rgba(22,21,15,.07);border-radius:999px;padding:3px;gap:2px">
+<button onClick="{{ setPeopleView }}" style="border:0;background:{{ tabPeopleBg }};color:{{ tabPeopleFg }};border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer">Списком</button>
+<button onClick="{{ setTableView }}" style="border:0;background:{{ tabTableBg }};color:{{ tabTableFg }};border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer">Таблицей</button>
+<button onClick="{{ setBalanceView }}" style="border:0;background:{{ tabBalBg }};color:{{ tabBalFg }};border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer">Баланс</button>
+</div>
+</div>
+
+<sc-if value="{{ settled }}" hint-placeholder-val="{{ false }}">
+<div style="background:#EAF6EC;border:1.5px solid #9BC9A6;border-radius:18px;padding:30px 22px;text-align:center">
+<div style="font-size:34px;margin-bottom:8px">🎉</div>
+<div style="font-size:17px;font-weight:700;color:#25693E">Все в расчёте</div>
+<div style="font-size:13.5px;color:#3F7A54;margin-top:5px">Встреча закрыта на равных. Можно планировать следующую.</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ viewPeople }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:10px">
+<sc-for list="{{ debtors }}" as="d" hint-placeholder-count="3">
+<div style="background:#fff;border:1px solid rgba(22,21,15,.10);border-radius:16px;overflow:hidden">
+<div onClick="{{ d.onToggle }}" style="display:flex;gap:12px;align-items:center;padding:13px 15px;cursor:pointer" style-hover="background:rgba(22,21,15,.03)">
+<span style="width:38px;height:38px;border-radius:50%;background:{{ d.bg }};display:grid;place-items:center;font-size:19px;flex:none">{{ d.emoji }}</span>
+<div style="flex:1;min-width:0">
+<div style="font-size:15px;font-weight:600">{{ d.name }}</div>
+<div style="font-size:12.5px;color:#8B8577;margin-top:2px">{{ d.sub }}</div>
+</div>
+<div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:#C3402E">{{ d.total }}</div>
+<span style="color:#A9A395;font-size:12px">{{ d.chev }}</span>
+</div>
+<sc-if value="{{ d.open }}" hint-placeholder-val="{{ true }}">
+<div style="border-top:1px solid rgba(22,21,15,.07);background:#FBF9F4;padding:6px 8px">
+<sc-for list="{{ d.rows }}" as="r" hint-placeholder-count="2">
+<div style="display:flex;align-items:center;gap:10px;padding:9px 9px">
+<span style="font-size:13.5px;color:#6C6759">→</span>
+<span style="width:26px;height:26px;border-radius:50%;background:{{ r.bg }};display:grid;place-items:center;font-size:13px;flex:none">{{ r.emoji }}</span>
+<div style="flex:1;font-size:14px;font-weight:500">{{ r.name }}</div>
+<div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14.5px">{{ r.amount }}</div>
+<button onClick="{{ r.onDone }}" style="border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" style-hover="background:#2E7D4F;color:#fff;border-color:#2E7D4F">Отдал</button>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ viewTable }}" hint-placeholder-val="{{ false }}">
+<div style="background:#fff;border:1px solid rgba(22,21,15,.10);border-radius:18px;padding:6px;overflow-x:auto">
+<table style="border-collapse:collapse;width:100%;min-width:420px">
+<thead>
+<tr>
+<th style="text-align:left;font-size:11.5px;font-weight:600;color:#8B8577;padding:10px 12px;text-transform:uppercase;letter-spacing:.03em">Должник ↓ / кому →</th>
+<sc-for list="{{ people }}" as="p" hint-placeholder-count="5">
+<th style="font-size:19px;padding:10px 6px;font-weight:400" title="{{ p.name }}">{{ p.emoji }}</th>
+</sc-for>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{ matrix }}" as="row" hint-placeholder-count="5">
+<tr>
+<td style="padding:9px 12px;font-size:14px;font-weight:600;border-top:1px solid rgba(22,21,15,.07);white-space:nowrap">{{ row.emoji }} {{ row.name }}</td>
+<sc-for list="{{ row.cells }}" as="c" hint-placeholder-count="5">
+<td style="padding:9px 6px;text-align:center;border-top:1px solid rgba(22,21,15,.07);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:{{ c.color }};background:{{ c.bg }}">{{ c.text }}</td>
+</sc-for>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</sc-if>
+
+<sc-if value="{{ viewBalance }}" hint-placeholder-val="{{ false }}">
+<div style="background:#fff;border:1px solid rgba(22,21,15,.10);border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+<sc-for list="{{ bars }}" as="b" hint-placeholder-count="5">
+<div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:14px;margin-bottom:6px">
+<span style="font-weight:600">{{ b.emoji }} {{ b.name }}</span>
+<span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:{{ b.color }}">{{ b.label }}</span>
+</div>
+<div style="position:relative;height:10px;background:rgba(22,21,15,.07);border-radius:99px">
+<div style="position:absolute;top:0;bottom:0;left:50%;width:1px;background:rgba(22,21,15,.22)"></div>
+<div style="position:absolute;top:0;bottom:0;left:{{ b.left }};width:{{ b.width }};background:{{ b.color }};border-radius:99px;transition:all .35s ease"></div>
+</div>
+</div>
+</sc-for>
+<div style="font-size:12.5px;color:#8B8577;text-align:center;padding-top:2px">Слева — кто должен, справа — кому должны</div>
+</div>
+</sc-if>
+</div>
+</section>
+
+<sc-if value="{{ showLog }}" hint-placeholder-val="{{ true }}">
+<section style="margin-top:34px">
+<h2 style="font-family:Unbounded,sans-serif;font-weight:600;font-size:20px;letter-spacing:-.025em;margin:0 0 14px">Что менялось</h2>
+<div style="display:flex;flex-direction:column;gap:2px">
+<sc-for list="{{ log }}" as="l" hint-placeholder-count="3">
+<div style="display:flex;gap:12px;align-items:baseline;font-size:13.5px;color:#6C6759;padding:7px 2px;border-bottom:1px dashed rgba(22,21,15,.10)">
+<span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#A9A395;white-space:nowrap">{{ l.time }}</span>
+<span>{{ l.text }}</span>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-if>
+</main>
+</sc-if>
+
+<sc-if value="{{ modalOpen }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ closeModal }}" style="position:fixed;inset:0;background:rgba(22,21,15,.42);backdrop-filter:blur(3px);z-index:60;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .16s ease">
+<div onClick="{{ stop }}" style="background:#FBF9F4;border-radius:22px;width:100%;max-width:460px;max-height:88vh;overflow:auto;padding:24px;box-shadow:0 24px 60px rgba(22,21,15,.30);animation:riseIn .2s ease">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+<h3 style="font-family:Unbounded,sans-serif;font-weight:600;font-size:19px;letter-spacing:-.02em;margin:0">{{ modalTitle }}</h3>
+<button onClick="{{ closeModal }}" style="border:0;background:rgba(22,21,15,.07);width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px">✕</button>
+</div>
+
+<sc-if value="{{ formHasName }}" hint-placeholder-val="{{ false }}">
+<label style="display:block;font-size:12.5px;font-weight:600;color:#6C6759;margin-bottom:6px">Имя</label>
+<input value="{{ form.name }}" onInput="{{ onName }}" placeholder="Как зовут" style="width:100%;border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:12px;padding:11px 14px;outline:none;margin-bottom:16px">
+<label style="display:block;font-size:12.5px;font-weight:600;color:#6C6759;margin-bottom:6px">Аватар</label>
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px">
+<sc-for list="{{ emojiChoices }}" as="e" hint-placeholder-count="10">
+<button onClick="{{ e.onPick }}" style="width:40px;height:40px;border-radius:12px;font-size:20px;cursor:pointer;background:{{ e.bg }};border:2px solid {{ e.border }}">{{ e.emoji }}</button>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ formHasTitle }}" hint-placeholder-val="{{ false }}">
+<label style="display:block;font-size:12.5px;font-weight:600;color:#6C6759;margin-bottom:6px">Название встречи</label>
+<input value="{{ form.title }}" onInput="{{ onTitle }}" placeholder="Например, Солевые шашлыки" style="width:100%;border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:12px;padding:11px 14px;outline:none;margin-bottom:16px">
+<label style="display:block;font-size:12.5px;font-weight:600;color:#6C6759;margin-bottom:6px">Описание</label>
+<textarea value="{{ form.desc }}" onInput="{{ onDesc }}" rows="3" placeholder="Пара слов, чтобы вспомнить" style="width:100%;border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:12px;padding:11px 14px;outline:none;margin-bottom:18px;resize:vertical"></textarea>
+</sc-if>
+
+<sc-if value="{{ formHasPayer }}" hint-placeholder-val="{{ false }}">
+<label style="display:block;font-size:12.5px;font-weight:600;color:#6C6759;margin-bottom:6px">{{ payerLabel }}</label>
+<select value="{{ form.payer }}" onChange="{{ onPayer }}" style="width:100%;border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:12px;padding:11px 14px;outline:none;margin-bottom:16px;cursor:pointer">
+<sc-for list="{{ people }}" as="p" hint-placeholder-count="5"><option value="{{ p.id }}">{{ p.pick }}</option></sc-for>
+</select>
+</sc-if>
+
+<sc-if value="{{ formHasTo }}" hint-placeholder-val="{{ false }}">
+<label style="display:block;font-size:12.5px;font-weight:600;color:#6C6759;margin-bottom:6px">Кому переводит</label>
+<select value="{{ form.to }}" onChange="{{ onTo }}" style="width:100%;border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:12px;padding:11px 14px;outline:none;margin-bottom:16px;cursor:pointer">
+<sc-for list="{{ people }}" as="p" hint-placeholder-count="5"><option value="{{ p.id }}">{{ p.pick }}</option></sc-for>
+</select>
+</sc-if>
+
+<sc-if value="{{ formHasAmount }}" hint-placeholder-val="{{ false }}">
+<label style="display:block;font-size:12.5px;font-weight:600;color:#6C6759;margin-bottom:6px">Сумма, ₽</label>
+<input value="{{ form.amount }}" onInput="{{ onAmount }}" inputMode="decimal" placeholder="0" style="width:100%;border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:12px;padding:12px 14px;outline:none;margin-bottom:16px;font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:700">
+<label style="display:block;font-size:12.5px;font-weight:600;color:#6C6759;margin-bottom:6px">На что</label>
+<input value="{{ form.desc }}" onInput="{{ onDesc }}" placeholder="Мясо, уголь, такси…" style="width:100%;border:1px solid rgba(22,21,15,.16);background:#fff;border-radius:12px;padding:11px 14px;outline:none;margin-bottom:18px">
+</sc-if>
+
+<sc-if value="{{ formHasShares }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+<label style="font-size:12.5px;font-weight:600;color:#6C6759">Делим на</label>
+<span style="font-size:12px;color:#A9A395">жмите на долю, чтобы уменьшить</span>
+</div>
+<div style="background:#fff;border:1px solid rgba(22,21,15,.12);border-radius:14px;overflow:hidden;margin-bottom:18px">
+<sc-for list="{{ shareRows }}" as="s" hint-placeholder-count="5">
+<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid rgba(22,21,15,.06)">
+<span style="width:30px;height:30px;border-radius:50%;background:{{ s.bg }};display:grid;place-items:center;font-size:15px;flex:none">{{ s.emoji }}</span>
+<div style="flex:1;font-size:14px;font-weight:500;color:{{ s.nameColor }}">{{ s.name }}</div>
+<div style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#8B8577;min-width:64px;text-align:right">{{ s.amount }}</div>
+<button onClick="{{ s.onCycle }}" style="border:1px solid {{ s.chipBorder }};background:{{ s.chipBg }};color:{{ s.chipFg }};border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:700;cursor:pointer;min-width:52px">{{ s.share }}</button>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<div style="display:flex;gap:9px;justify-content:space-between;align-items:center">
+<sc-if value="{{ canDelete }}" hint-placeholder-val="{{ false }}">
+<button onClick="{{ onDeletePerson }}" style="border:1px solid rgba(195,64,46,.35);background:transparent;color:#C3402E;border-radius:999px;padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer" style-hover="background:#C3402E;color:#fff">Удалить</button>
+</sc-if>
+<div style="flex:1"></div>
+<button onClick="{{ closeModal }}" style="border:1px solid rgba(22,21,15,.16);background:transparent;border-radius:999px;padding:10px 18px;font-size:13.5px;font-weight:600;cursor:pointer">Отмена</button>
+<button onClick="{{ onSubmit }}" style="border:0;background:#E04A22;color:#fff;border-radius:999px;padding:11px 22px;font-size:13.5px;font-weight:700;cursor:pointer;box-shadow:0 2px 0 #A8320F" style-hover="background:#C93F1B">{{ submitText }}</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showChangelog&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Страница встречи&quot;},&quot;defaultVariant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;people&quot;,&quot;table&quot;,&quot;balance&quot;],&quot;default&quot;:&quot;people&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Страница встречи&quot;}}">
+const PALETTE = ['#FFD9C2','#D8E9DC','#E3DCF3','#FBE7A8','#CFE4F2','#F5D2DE','#DCE7C8','#EADCCB'];
+const EMOJIS = ['🐻','🦊','🐸','🦉','🐧','🐳','🦕','🐝','🦔','🐙','🦩','🐨'];
+const KEY = 'fond-vstrech-v1';
+
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function money(n){ return new Intl.NumberFormat('ru-RU').format(Math.round(n)) + ' ₽'; }
+function dayLabel(ts){
+  return new Date(ts).toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
+}
+function timeLabel(ts){
+  return new Date(ts).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+const DAY = 86400000;
+
+function seed(){
+  const now = Date.now();
+  const mk = (name,emoji,i)=>({id:uid(),name,emoji,color:PALETTE[i%PALETTE.length]});
+  const bbq = [mk('Лёша П','🐻',0),mk('Настя','🦊',1),mk('Егор','🐸',2),mk('Влад','🦉',3),mk('Лёша З','🐧',4)];
+  const dacha = [mk('Настя','🦊',1),mk('Влад','🦉',3),mk('Егор','🐸',2),mk('Марина','🦩',5)];
+  const kino = [mk('Лёша П','🐻',0),mk('Лёша З','🐧',4),mk('Егор','🐸',2)];
+  const e = (payer,amount,desc,ts)=>({id:uid(),type:'expense',payer,amount,desc,ts,excl:{}});
+  return { meetings: [
+    { id:'bbq', title:'Солевые шашлыки', desc:'Выехали на озеро с мангалом и колонкой. Считаем всё: мясо, уголь, дорогу и внезапную вторую партию угля.', emoji:'🔥', cover:null, date: now - DAY*1, participants: bbq, entries: [], log:[{ts:now-DAY*1,text:'Встреча создана, добавлено 5 участников'}] },
+    { id:'dacha', title:'Дача у Влада', desc:'Три дня, баня и продукты из «Ленты».', emoji:'🏡', cover:null, date: now - DAY*12, participants: dacha, entries: [
+      e(dacha[1].id, 8400, 'Продукты на все дни', now-DAY*12),
+      e(dacha[0].id, 3200, 'Бензин туда-обратно', now-DAY*12+3600e3),
+      e(dacha[3].id, 2100, 'Дрова и веники', now-DAY*11)
+    ], log:[{ts:now-DAY*12,text:'Настя добавила расход «Продукты на все дни»'}] },
+    { id:'kino', title:'Кино и шаурма', desc:'Сеанс в 21:40 и обязательный заход к Ашоту.', emoji:'🎬', cover:null, date: now - DAY*26, participants: kino, entries: [
+      e(kino[0].id, 1950, 'Билеты', now-DAY*26),
+      e(kino[1].id, 1290, 'Шаурма и кола', now-DAY*26+5400e3),
+      {id:uid(),type:'transfer',payer:kino[2].id,to:kino[0].id,amount:430,desc:'',ts:now-DAY*25},
+      {id:uid(),type:'transfer',payer:kino[2].id,to:kino[1].id,amount:650,desc:'',ts:now-DAY*25},
+      {id:uid(),type:'transfer',payer:kino[1].id,to:kino[0].id,amount:220,desc:'',ts:now-DAY*25}
+    ], log:[{ts:now-DAY*25,text:'Егор отметил перевод Лёше П'}] }
+  ]};
+}
+
+function computeShare(entry, people){
+  const w = {};
+  let total = 0;
+  people.forEach(p=>{ const off = (entry.excl && entry.excl[p.id]) || 0; const v = Math.max(0, 1-off); w[p.id]=v; total+=v; });
+  if (total <= 0) { people.forEach(p=>w[p.id]=1); total = people.length || 1; }
+  const out = {};
+  people.forEach(p=>{ out[p.id] = entry.amount * w[p.id] / total; });
+  return out;
+}
+
+function balances(m){
+  const net = {};
+  m.participants.forEach(p=>net[p.id]=0);
+  m.entries.forEach(en=>{
+    if (en.type === 'expense'){
+      if (net[en.payer] !== undefined) net[en.payer] += en.amount;
+      const sh = computeShare(en, m.participants);
+      m.participants.forEach(p=>{ net[p.id] -= sh[p.id]; });
+    } else {
+      if (net[en.payer] !== undefined) net[en.payer] += en.amount;
+      if (net[en.to] !== undefined) net[en.to] -= en.amount;
+    }
+  });
+  return net;
+}
+
+function settle(m){
+  const net = balances(m);
+  const debt = [], cred = [];
+  m.participants.forEach(p=>{
+    const v = Math.round(net[p.id]);
+    if (v < -0.5) debt.push({id:p.id, v:-v});
+    else if (v > 0.5) cred.push({id:p.id, v});
+  });
+  debt.sort((a,b)=>b.v-a.v); cred.sort((a,b)=>b.v-a.v);
+  const res = [];
+  let i=0, j=0;
+  while (i<debt.length && j<cred.length){
+    const amt = Math.min(debt[i].v, cred[j].v);
+    if (amt > 0.5) res.push({from:debt[i].id, to:cred[j].id, amount:amt});
+    debt[i].v -= amt; cred[j].v -= amt;
+    if (debt[i].v <= 0.5) i++;
+    if (cred[j].v <= 0.5) j++;
+  }
+  return res;
+}
+
+function totalOf(m){ return m.entries.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0); }
+
+class Component extends DCLogic {
+  state = { view:'list', meetingId:null, query:'', sort:'date-desc', person:'', tab:null, expanded:{}, modal:null, form:{}, data:null };
+
+  componentDidMount(){
+    let data = null;
+    try { const raw = localStorage.getItem(KEY); if (raw) data = JSON.parse(raw); } catch(e){}
+    if (!data || !data.meetings || !data.meetings.length) data = seed();
+    this.setState({data});
+  }
+  save(data){
+    this.setState({data});
+    try { localStorage.setItem(KEY, JSON.stringify(data)); } catch(e){}
+  }
+  mutate(fn, logText){
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const m = data.meetings.find(x=>x.id===this.state.meetingId);
+    fn(m, data);
+    if (m && logText){ m.log = m.log || []; m.log.unshift({ts:Date.now(), text:logText}); }
+    this.save(data);
+  }
+  cur(){ return (this.state.data ? this.state.data.meetings.find(m=>m.id===this.state.meetingId) : null); }
+  pmap(m){ const o={}; m.participants.forEach(p=>o[p.id]=p); return o; }
+
+  openForm(kind, extra){
+    const m = this.cur();
+    const first = m && m.participants[0] ? m.participants[0].id : '';
+    const second = m && m.participants[1] ? m.participants[1].id : first;
+    const base = {name:'', emoji:EMOJIS[0], title:'', desc:'', amount:'', payer:first, to:second, excl:{}};
+    this.setState({modal:kind, form:Object.assign(base, extra||{})});
+  }
+  setF(k,v){ this.setState(s=>({form:Object.assign({}, s.form, {[k]:v})})); }
+
+  submit(){
+    const f = this.state.form, kind = this.state.modal;
+    if (kind === 'meeting'){
+      const title = (f.title||'').trim() || 'Новая встреча';
+      const id = uid();
+      const data = JSON.parse(JSON.stringify(this.state.data));
+      data.meetings.unshift({id, title, desc:(f.desc||'').trim(), emoji:'✨', cover:null, date:Date.now(), participants:[], entries:[], log:[{ts:Date.now(),text:'Встреча создана'}]});
+      this.save(data);
+      this.setState({modal:null, view:'meeting', meetingId:id});
+      return;
+    }
+    if (kind === 'person' || kind === 'editPerson'){
+      const name = (f.name||'').trim(); if (!name) return;
+      this.mutate(m=>{
+        if (kind === 'person'){
+          m.participants.push({id:uid(), name, emoji:f.emoji, color:PALETTE[m.participants.length % PALETTE.length]});
+        } else {
+          const p = m.participants.find(x=>x.id===f.id); if (p){ p.name = name; p.emoji = f.emoji; }
+        }
+      }, kind === 'person' ? name + ' присоединился к встрече' : 'Профиль участника обновлён: ' + name);
+    }
+    if (kind === 'expense' || kind === 'transfer'){
+      const amount = parseFloat(String(f.amount).replace(',','.').replace(/\s/g,''));
+      if (!amount || amount <= 0) return;
+      const m0 = this.cur(); const pm = this.pmap(m0);
+      const who = pm[f.payer] ? pm[f.payer].name : '';
+      if (kind === 'expense'){
+        this.mutate(m=>{ m.entries.push({id:uid(), type:'expense', payer:f.payer, amount, desc:(f.desc||'').trim() || 'Без описания', ts:Date.now(), excl:f.excl||{}}); },
+          who + ' добавил расход ' + money(amount));
+      } else {
+        if (f.payer === f.to) return;
+        const to = pm[f.to] ? pm[f.to].name : '';
+        this.mutate(m=>{ m.entries.push({id:uid(), type:'transfer', payer:f.payer, to:f.to, amount, desc:'', ts:Date.now()}); },
+          who + ' перевёл ' + money(amount) + ' → ' + to);
+      }
+    }
+    this.setState({modal:null});
+  }
+
+  renderVals(){
+    const S = this.state;
+    const data = S.data;
+    const v = {
+      goList: ()=>this.setState({view:'list', meetingId:null}),
+      newMeeting: ()=>this.openForm('meeting'),
+      closeModal: ()=>this.setState({modal:null}),
+      stop: (e)=>e.stopPropagation(),
+      isList: S.view==='list', isMeeting: S.view==='meeting',
+      query: S.query, sort: S.sort, filterPerson: S.person,
+      onQuery: e=>this.setState({query:e.target.value}),
+      onSort: e=>this.setState({sort:e.target.value}),
+      onFilterPerson: e=>this.setState({person:e.target.value}),
+      onName: e=>this.setF('name', e.target.value),
+      onTitle: e=>this.setF('title', e.target.value),
+      onDesc: e=>this.setF('desc', e.target.value),
+      onAmount: e=>this.setF('amount', e.target.value),
+      onPayer: e=>this.setF('payer', e.target.value),
+      onTo: e=>this.setF('to', e.target.value),
+      onSubmit: ()=>this.submit(),
+      showLog: this.props.showChangelog !== false,
+      modalOpen: !!S.modal,
+      form: S.form,
+      people: [], entries: [], debtors: [], matrix: [], bars: [], log: [], cards: [], allPeople: [], shareRows: [], emojiChoices: []
+    };
+    if (!data) return v;
+
+    if (S.view === 'list'){
+      const names = {};
+      data.meetings.forEach(m=>m.participants.forEach(p=>names[p.name]=1));
+      v.allPeople = Object.keys(names).sort();
+      let list = data.meetings.slice();
+      const q = S.query.trim().toLowerCase();
+      if (q) list = list.filter(m=>(m.title+' '+m.desc).toLowerCase().includes(q));
+      if (S.person) list = list.filter(m=>m.participants.some(p=>p.name===S.person));
+      const open = m=>settle(m).length;
+      const sorters = {
+        'date-desc': (a,b)=>b.date-a.date, 'date-asc': (a,b)=>a.date-b.date,
+        'sum-desc': (a,b)=>totalOf(b)-totalOf(a), 'open-desc': (a,b)=>open(b)-open(a)
+      };
+      list.sort(sorters[S.sort] || sorters['date-desc']);
+      const covers = ['linear-gradient(135deg,#F7C6A8,#E7A183)','linear-gradient(135deg,#BFD9C6,#8FBBA1)','linear-gradient(135deg,#C9CFEA,#9AA6D6)','linear-gradient(135deg,#F0D69B,#DCB86A)'];
+      v.cards = list.map((m,i)=>{
+        const left = m.participants.length ? open(m) : 0;
+        const st = left===0 ? {t:'Все в расчёте', bg:'#DFF0E3', fg:'#25693E', line:'#9BC9A6'}
+          : left<=2 ? {t:'Осталось '+left, bg:'#FBEFC9', fg:'#8A6403', line:'#E0C067'}
+          : {t:'Осталось '+left, bg:'#FBDED6', fg:'#A6301D', line:'#E09E8E'};
+        return { title:m.title, emoji:m.emoji, dateLabel:dayLabel(m.date), total: money(totalOf(m)),
+          cover: m.cover ? 'center/cover url('+m.cover+')' : covers[i % covers.length],
+          status: m.participants.length ? st.t : 'Нет участников', badgeBg: st.bg, badgeFg: st.fg, line: st.line,
+          avatars: m.participants.slice(0,5).map(p=>({emoji:p.emoji, bg:p.color})),
+          onOpen: ()=>this.setState({view:'meeting', meetingId:m.id, expanded:{}}) };
+      });
+      v.noCards = v.cards.length === 0;
+      return v;
+    }
+
+    const m = this.cur();
+    if (!m) { v.isMeeting = false; v.isList = true; return v; }
+    const pm = this.pmap(m);
+    const net = balances(m);
+    const plan = settle(m);
+    const total = totalOf(m);
+    const per = m.participants.length ? total/m.participants.length : 0;
+    const left = plan.length;
+    const st = left===0 ? {t:m.entries.length? 'Все в расчёте':'Ещё ничего не потрачено', bg:'#DFF0E3', fg:'#25693E'}
+      : left<=2 ? {t:'Осталось переводов: '+left, bg:'#FBEFC9', fg:'#8A6403'}
+      : {t:'Осталось переводов: '+left, bg:'#FBDED6', fg:'#A6301D'};
+
+    Object.assign(v, {
+      meetingTitle:m.title, meetingDesc:m.desc, meetingEmoji:m.emoji, meetingDate: dayLabel(m.date),
+      coverBg: m.cover ? 'center/cover no-repeat url('+m.cover+')' : '#FBF9F4',
+      noCover: !m.cover,
+      statusText: st.t, badgeBg: st.bg, badgeFg: st.fg,
+      statTotal: money(total), statPer: money(per), statLeft: String(left),
+      settled: left===0 && m.entries.length>0,
+      onDragOver: e=>{ e.preventDefault(); },
+      onDropCover: e=>{
+        e.preventDefault();
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!file) return;
+        const r = new FileReader();
+        r.onload = ()=>this.mutate(mm=>{ mm.cover = r.result; }, 'Обновлена обложка встречи');
+        r.readAsDataURL(file);
+      },
+      addPerson: ()=>this.openForm('person'),
+      addExpense: ()=>this.openForm('expense'),
+      addTransfer: ()=>this.openForm('transfer')
+    });
+
+    const paid = {};
+    m.participants.forEach(p=>paid[p.id]=0);
+    m.entries.forEach(e=>{ if (e.type==='expense' && paid[e.payer]!==undefined) paid[e.payer]+=e.amount; });
+
+    v.people = m.participants.map(p=>{
+      const n = Math.round(net[p.id]);
+      return { id:p.id, name:p.name, emoji:p.emoji, bg:p.color, pick: p.emoji+'  '+p.name,
+        paid: money(paid[p.id]),
+        netLabel: n>0 ? 'ему должны '+money(n) : n<0 ? 'должен '+money(-n) : 'в расчёте',
+        netColor: n>0 ? '#25693E' : n<0 ? '#C3402E' : '#8B8577',
+        onEdit: (e)=>{ e.stopPropagation(); this.openForm('editPerson', {id:p.id, name:p.name, emoji:p.emoji}); } };
+    });
+
+    v.entries = m.entries.slice().sort((a,b)=>b.ts-a.ts).map(en=>{
+      const p = pm[en.payer] || {name:'—', emoji:'👤', color:'#eee'};
+      const to = en.to ? pm[en.to] : null;
+      const sh = en.type==='expense' ? computeShare(en, m.participants) : null;
+      const partial = sh ? m.participants.filter(x=>(en.excl&&en.excl[x.id])>0) : [];
+      return { emoji:p.emoji, bg:p.color,
+        who: en.type==='expense' ? p.name : p.name + ' → ' + (to?to.name:'—'),
+        sub: en.type==='expense' ? (en.desc + (partial.length ? ' · делят не все' : '')) : 'перевод в счёт долга',
+        amount: (en.type==='expense'?'':'↳ ') + money(en.amount),
+        amtColor: en.type==='expense' ? '#16150F' : '#25693E',
+        time: timeLabel(en.ts),
+        onDelete: (ev)=>{ ev.stopPropagation(); this.mutate(mm=>{ mm.entries = mm.entries.filter(x=>x.id!==en.id); }, 'Удалена запись на '+money(en.amount)); } };
+    });
+    v.noEntries = m.entries.length === 0;
+
+    const tab = S.tab || this.props.defaultVariant || 'people';
+    const on = '#16150F', onFg = '#fff', off = 'transparent', offFg = '#6C6759';
+    Object.assign(v, {
+      viewPeople: tab==='people' && !(left===0 && m.entries.length>0),
+      viewTable: tab==='table' && !(left===0 && m.entries.length>0),
+      viewBalance: tab==='balance' && !(left===0 && m.entries.length>0),
+      tabPeopleBg: tab==='people'?on:off, tabPeopleFg: tab==='people'?onFg:offFg,
+      tabTableBg: tab==='table'?on:off, tabTableFg: tab==='table'?onFg:offFg,
+      tabBalBg: tab==='balance'?on:off, tabBalFg: tab==='balance'?onFg:offFg,
+      setPeopleView: ()=>this.setState({tab:'people'}),
+      setTableView: ()=>this.setState({tab:'table'}),
+      setBalanceView: ()=>this.setState({tab:'balance'})
+    });
+
+    const byDebtor = {};
+    plan.forEach(t=>{ (byDebtor[t.from] = byDebtor[t.from] || []).push(t); });
+    v.debtors = Object.keys(byDebtor).map(id=>{
+      const p = pm[id]; const rows = byDebtor[id];
+      const sum = rows.reduce((s,r)=>s+r.amount,0);
+      const isOpen = S.expanded[id] !== false;
+      return { name:p.name, emoji:p.emoji, bg:p.color, open:isOpen, chev: isOpen?'▲':'▼',
+        sub: 'переводов: ' + rows.length, total: money(sum),
+        onToggle: ()=>this.setState(s=>({expanded:Object.assign({}, s.expanded, {[id]: s.expanded[id]===false})})),
+        rows: rows.map(r=>{
+          const t = pm[r.to];
+          return { name:t.name, emoji:t.emoji, bg:t.color, amount: money(r.amount),
+            onDone: (e)=>{ e.stopPropagation(); this.mutate(mm=>{ mm.entries.push({id:uid(), type:'transfer', payer:id, to:r.to, amount:Math.round(r.amount), desc:'', ts:Date.now()}); }, p.name+' отдал '+money(r.amount)+' → '+t.name); } };
+        }) };
+    });
+
+    v.matrix = m.participants.map(row=>({
+      name: row.name, emoji: row.emoji,
+      cells: m.participants.map(col=>{
+        const t = plan.find(x=>x.from===row.id && x.to===col.id);
+        if (row.id === col.id) return {text:'·', color:'#D6D0C2', bg:'rgba(22,21,15,.03)'};
+        return t ? {text: money(t.amount).replace(' ₽',''), color:'#C3402E', bg:'#FCF1EE'} : {text:'—', color:'#D6D0C2', bg:'transparent'};
+      })
+    }));
+
+    const maxAbs = Math.max(1, ...m.participants.map(p=>Math.abs(net[p.id])));
+    v.bars = m.participants.map(p=>{
+      const n = net[p.id];
+      const w = Math.min(50, Math.abs(n)/maxAbs*50);
+      return { name:p.name, emoji:p.emoji,
+        label: Math.round(n)===0 ? 'ровно' : (n>0?'+':'−') + money(Math.abs(n)),
+        color: Math.round(n)===0 ? '#8B8577' : n>0 ? '#2E7D4F' : '#C3402E',
+        left: (n>=0 ? 50 : 50-w) + '%', width: Math.max(w, 1.2) + '%' };
+    });
+
+    v.log = (m.log||[]).slice(0,12).map(l=>({time: timeLabel(l.ts), text: l.text}));
+
+    const kind = S.modal;
+    if (kind){
+      const titles = {meeting:'Новая встреча', person:'Новый участник', editPerson:'Участник', expense:'Расход', transfer:'Перевод'};
+      Object.assign(v, {
+        modalTitle: titles[kind] || '',
+        submitText: kind==='editPerson' ? 'Сохранить' : kind==='meeting' ? 'Создать' : 'Добавить',
+        formHasName: kind==='person'||kind==='editPerson',
+        formHasTitle: kind==='meeting',
+        formHasPayer: kind==='expense'||kind==='transfer',
+        formHasTo: kind==='transfer',
+        formHasAmount: kind==='expense'||kind==='transfer',
+        formHasShares: kind==='expense',
+        payerLabel: kind==='transfer' ? 'Кто переводит' : 'Кто заплатил',
+        canDelete: kind==='editPerson',
+        onDeletePerson: ()=>{ const id = S.form.id; this.mutate(mm=>{ const p = mm.participants.find(x=>x.id===id); mm.participants = mm.participants.filter(x=>x.id!==id); mm.entries = mm.entries.filter(e=>e.payer!==id && e.to!==id); if(p) mm.__d = p.name; }, 'Участник удалён'); this.setState({modal:null}); },
+        emojiChoices: EMOJIS.map(e=>({emoji:e, bg: e===S.form.emoji?'#FFE3D6':'#fff', border: e===S.form.emoji?'#E04A22':'rgba(22,21,15,.12)', onPick: ()=>this.setF('emoji', e)}))
+      });
+      if (kind === 'expense'){
+        const amt = parseFloat(String(S.form.amount||'').replace(',','.')) || 0;
+        const fake = {amount:amt, excl:S.form.excl||{}};
+        const sh = computeShare(fake, m.participants);
+        const steps = [0,0.25,0.5,0.75,1];
+        const labels = {0:'1', 0.25:'¾', 0.5:'½', 0.75:'¼', 1:'0'};
+        v.shareRows = m.participants.map(p=>{
+          const off = (S.form.excl && S.form.excl[p.id]) || 0;
+          const full = off === 0, none = off === 1;
+          return { name:p.name, emoji:p.emoji, bg:p.color,
+            nameColor: none ? '#A9A395' : '#16150F',
+            amount: none ? '—' : money(sh[p.id]),
+            share: labels[off] || '1',
+            chipBg: full ? '#fff' : none ? 'rgba(22,21,15,.06)' : '#FFF3E4',
+            chipFg: none ? '#A9A395' : '#16150F',
+            chipBorder: full ? 'rgba(22,21,15,.14)' : none ? 'rgba(22,21,15,.10)' : '#E8A25E',
+            onCycle: ()=>{ const i = steps.indexOf(off); const nx = steps[(i+1)%steps.length];
+              this.setState(s=>({form:Object.assign({}, s.form, {excl:Object.assign({}, s.form.excl, {[p.id]: nx})})})); } };
+        });
+      }
+    }
+    return v;
+  }
+}
+</script>
+</body>
+</html>
