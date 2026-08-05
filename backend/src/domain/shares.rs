@@ -1,14 +1,32 @@
-use std::collections::BTreeMap;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::types::{Entry, FULL_QUARTERS, Participant, ParticipantId};
 
 /// Доли одного расхода в целых рублях.
 ///
-/// Гарантия: сумма всех долей ровно равна `entry.amount`. На ней держится
-/// инвариант «сумма балансов равна нулю», а на нём — способность плана
-/// переводов закрыть встречу в ноль.
+/// Гарантия: при неотрицательной сумме и уникальных участниках сумма всех
+/// долей ровно равна `entry.amount`. На ней держится инвариант «сумма
+/// балансов равна нулю», а на нём — способность плана переводов закрыть
+/// встречу в ноль.
 pub fn expense_shares(entry: &Entry, participants: &[Participant]) -> BTreeMap<ParticipantId, i64> {
+    debug_assert!(
+        entry.amount >= 0,
+        "сумма расхода не может быть отрицательной: это гарантирует слой API"
+    );
+    debug_assert!(
+        participants
+            .iter()
+            .map(|participant| participant.id)
+            .collect::<BTreeSet<_>>()
+            .len()
+            == participants.len(),
+        "участники должны быть уникальны: доли ключуются по id"
+    );
+
     let mut shares: BTreeMap<ParticipantId, i64> = BTreeMap::new();
+    // Не только оптимизация: без участников total_quarters ниже был бы
+    // нулевым. (Второй путь к нулю появится в следующей задаче.)
     if participants.is_empty() {
         return shares;
     }
@@ -20,19 +38,23 @@ pub fn expense_shares(entry: &Entry, participants: &[Participant]) -> BTreeMap<P
     let mut distributed: i64 = 0;
     for participant in participants {
         let numerator = i128::from(entry.amount) * i128::from(FULL_QUARTERS);
+        // Вес участника не превышает суммы весов, поэтому |base| не больше
+        // amount и сужение до i64 безопасно.
         let base = (numerator / i128::from(total_quarters)) as i64;
         shares.insert(participant.id, base);
         distributed += base;
+        // Веса пока одинаковы у всех, поэтому дробные части совпадают —
+        // сортировка ниже готовит почву для частичных долей.
         remainders.push((*participant, numerator % i128::from(total_quarters)));
     }
 
-    // Остаток рублей — тем, у кого дробная часть больше; при равенстве
-    // по порядку добавления, чтобы результат был детерминированным.
-    remainders.sort_by(|left, right| {
-        right
-            .1
-            .cmp(&left.1)
-            .then(left.0.position.cmp(&right.0.position))
+    // Остаток рублей — тем, у кого дробная часть больше. Убывание по остатку —
+    // не косметика: именно оно не даст рублю остатка достаться участнику
+    // с нулевой долей (его остаток всегда 0). При равенстве — по порядку
+    // добавления, затем по id, чтобы порядок был полным и результат не зависел
+    // от порядка строк, пришедших из базы.
+    remainders.sort_by_key(|(participant, remainder)| {
+        (Reverse(*remainder), participant.position, participant.id)
     });
 
     let mut leftover = entry.amount - distributed;
@@ -98,5 +120,35 @@ mod tests {
         let shares = expense_shares(&entry, &people);
 
         assert_eq!(shares.values().sum::<i64>(), 1000);
+    }
+
+    #[test]
+    fn spreads_several_leftover_roubles_one_each() {
+        let people = participants(7);
+        let entry = expense(people[0], 100);
+
+        let shares = expense_shares(&entry, &people);
+
+        // 100 на семерых — по 14, остаток 2 ₽ уходит двум первым по одному
+        // рублю, а не одному человеку целиком.
+        assert_eq!(shares[&people[0].id], 15);
+        assert_eq!(shares[&people[1].id], 15);
+        for person in &people[2..] {
+            assert_eq!(shares[&person.id], 14, "участник {}", person.position);
+        }
+        assert_eq!(shares.values().sum::<i64>(), 100);
+    }
+
+    #[test]
+    fn gives_the_only_rouble_to_the_first_participant() {
+        let people = participants(3);
+        let entry = expense(people[0], 1);
+
+        let shares = expense_shares(&entry, &people);
+
+        // Граница: целая часть у всех нулевая, весь расход — это остаток.
+        assert_eq!(shares[&people[0].id], 1);
+        assert_eq!(shares[&people[1].id], 0);
+        assert_eq!(shares[&people[2].id], 0);
     }
 }
