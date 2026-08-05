@@ -19,6 +19,8 @@ pub struct Participant {
     pub position: i32,
 }
 
+/// Запись — это либо расход (потрачено на встрече, делится между участниками),
+/// либо перевод от одного участника другому в счёт погашения долга.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
     Expense,
@@ -38,6 +40,11 @@ pub struct Weight {
 
 /// Расход или перевод. Суммы — целые рубли, всегда больше нуля;
 /// это гарантирует слой API.
+///
+/// Тип один в один повторяет строку таблицы `entries`, поэтому `recipient_id`
+/// заполнен только у перевода, а `weights` у перевода всегда пусто. Эти
+/// инварианты проверяются CHECK-constraint'ами в схеме базы, а не типами:
+/// домен получает уже провалидированные строки.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub kind: EntryKind,

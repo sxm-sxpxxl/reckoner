@@ -7,6 +7,10 @@ use super::types::{Entry, EntryKind, Participant, ParticipantId, Weight};
 /// Участник с предсказуемым идентификатором: `participant(1)` всегда даёт
 /// один и тот же id, поэтому ожидания в тестах можно писать явно.
 pub fn participant(position: i32) -> Participant {
+    debug_assert!(
+        position >= 0,
+        "position — это порядок добавления участника, начинается с нуля"
+    );
     Participant {
         id: ParticipantId(Uuid::from_u128(position as u128 + 1)),
         position,
@@ -47,6 +51,7 @@ pub fn expense_with_weights(
     }
 }
 
+/// Перевод долга от одного участника другому.
 pub fn transfer(from: Participant, to: Participant, amount: i64) -> Entry {
     Entry {
         kind: EntryKind::Transfer,

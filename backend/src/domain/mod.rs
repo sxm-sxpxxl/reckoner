@@ -9,5 +9,5 @@ pub mod types;
 pub mod testing;
 
 pub use types::{
-    Entry, EntryKind, MeetingFacts, Participant, ParticipantId, Weight, FULL_QUARTERS,
+    Entry, EntryKind, FULL_QUARTERS, MeetingFacts, Participant, ParticipantId, Weight,
 };
