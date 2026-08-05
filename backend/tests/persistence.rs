@@ -791,3 +791,102 @@ async fn empty_share_list_means_split_equally_again() {
         .expect("доли");
     assert!(shares.is_empty());
 }
+
+#[tokio::test]
+async fn filters_meetings_by_query_and_participant() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let bbq = meetings::insert(
+        &mut tx,
+        NewMeeting {
+            title: "Солевые шашлыки".to_owned(),
+            description: "Выехали на озеро с мангалом".to_owned(),
+            emoji: "🔥".to_owned(),
+            held_on: NaiveDate::from_ymd_opt(2026, 8, 3).expect("дата"),
+        },
+    )
+    .await
+    .expect("шашлыки");
+
+    let dacha = meetings::insert(
+        &mut tx,
+        NewMeeting {
+            title: "Дача у Влада".to_owned(),
+            description: "Баня и продукты".to_owned(),
+            emoji: "🏡".to_owned(),
+            held_on: NaiveDate::from_ymd_opt(2026, 7, 23).expect("дата"),
+        },
+    )
+    .await
+    .expect("дача");
+
+    participants::insert(&mut tx, bbq.id, "Настя", "🦊")
+        .await
+        .expect("участник шашлыков");
+    participants::insert(&mut tx, dacha.id, "Влад", "🦉")
+        .await
+        .expect("участник дачи");
+
+    // Без фильтров — обе, новые сверху по дате встречи.
+    let all = meetings::list_filtered(&mut tx, None, None)
+        .await
+        .expect("список");
+    let titles: Vec<&str> = all.iter().map(|row| row.title.as_str()).collect();
+    assert_eq!(titles, ["Солевые шашлыки", "Дача у Влада"]);
+
+    // Поиск идёт и по названию, и по описанию, регистр не важен.
+    let by_title = meetings::list_filtered(&mut tx, Some("ШАШЛЫК"), None)
+        .await
+        .expect("поиск по названию");
+    assert_eq!(by_title.len(), 1);
+    assert_eq!(by_title[0].id, bbq.id);
+
+    let by_description = meetings::list_filtered(&mut tx, Some("баня"), None)
+        .await
+        .expect("поиск по описанию");
+    assert_eq!(by_description.len(), 1);
+    assert_eq!(by_description[0].id, dacha.id);
+
+    // Фильтр по участнику: встреча попадает в выдачу, если такой участник в ней есть.
+    let by_participant = meetings::list_filtered(&mut tx, None, Some("Влад"))
+        .await
+        .expect("фильтр по участнику");
+    assert_eq!(by_participant.len(), 1);
+    assert_eq!(by_participant[0].id, dacha.id);
+
+    // Фильтры складываются, а не заменяют друг друга.
+    let both = meetings::list_filtered(&mut tx, Some("шашлык"), Some("Влад"))
+        .await
+        .expect("оба фильтра");
+    assert!(both.is_empty());
+}
+
+#[tokio::test]
+async fn treats_wildcards_in_the_query_as_plain_text() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    meetings::insert(
+        &mut tx,
+        NewMeeting {
+            title: "Дача у Влада".to_owned(),
+            description: String::new(),
+            emoji: "🏡".to_owned(),
+            held_on: NaiveDate::from_ymd_opt(2026, 7, 23).expect("дата"),
+        },
+    )
+    .await
+    .expect("дача");
+
+    // Символ `%` приходит от пользователя и обязан остаться данными. Если бы
+    // шаблон склеивался в текст запроса, такой поиск нашёл бы всё подряд.
+    let wildcard = meetings::list_filtered(&mut tx, Some("%"), None)
+        .await
+        .expect("поиск по проценту");
+    assert!(
+        wildcard.is_empty(),
+        "процент сработал как шаблон: {:?}",
+        wildcard.iter().map(|row| &row.title).collect::<Vec<_>>()
+    );
+}

@@ -2362,23 +2362,36 @@ Run: `cd backend && cargo test --test persistence`
 /// сверху; остальные три режима сортировки применяет слой API, потому что
 /// `total-desc` и `open-first` зависят от посчитанных значений.
 ///
+/// Поиск сделан через `position`, а не через `ilike '%' || $1 || '%'`. Причина
+/// не в безопасности — параметр привязан в обоих случаях, — а в том, что у
+/// `like` есть своя семантика шаблонов: введённый пользователем `%` стал бы
+/// подстановочным символом и такой поиск возвращал бы вообще все встречи.
+/// Спека просит поиск по подстроке, и `position` выражает ровно это, не требуя
+/// экранировать `%`, `_` и обратный слэш.
+///
 /// Приведение `$1::text` обязательно: без него Postgres не может определить
 /// тип параметра, когда тот равен NULL.
+///
+/// Третий ключ сортировки `m.id` — та же причина, что и в остальных запросах:
+/// две встречи с одинаковой датой и одинаковым `created_at` без него шли бы
+/// в произвольном порядке.
 pub async fn list_filtered(
     conn: &mut PgConnection,
     query: Option<&str>,
     participant: Option<&str>,
 ) -> Result<Vec<MeetingRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
-        "select {COLUMNS} from meetings m \
+    sqlx::query_as(
+        "select id, title, description, emoji, held_on, cover_mime, \
+                cover_version, created_at, updated_at \
+         from meetings m \
          where ($1::text is null \
-                or m.title ilike '%' || $1 || '%' \
-                or m.description ilike '%' || $1 || '%') \
+                or position(lower($1) in lower(m.title)) > 0 \
+                or position(lower($1) in lower(m.description)) > 0) \
            and ($2::text is null or exists ( \
                  select 1 from participants p \
                  where p.meeting_id = m.id and p.name = $2)) \
-         order by m.held_on desc, m.created_at desc, m.id"
-    ))
+         order by m.held_on desc, m.created_at desc, m.id",
+    )
     .bind(query)
     .bind(participant)
     .fetch_all(conn)
@@ -2386,14 +2399,16 @@ pub async fn list_filtered(
 }
 ```
 
-Третий ключ сортировки `m.id` — та же причина, что и в остальных запросах: две встречи с одинаковой
-датой и одинаковым `created_at` без него шли бы в произвольном порядке.
+Первая редакция использовала `ilike '%' || $1 || '%'`, и добавленный тест
+`treats_wildcards_in_the_query_as_plain_text` это поймал: поиск по `%` возвращал все встречи.
+Инъекции здесь не было — параметр привязан, структура запроса не менялась, — но семантика шаблонов
+`like` протекала в пользовательский ввод, а спека просит подстроку.
 
 - [ ] **Step 4: Прогнать тесты**
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 20 passed; 0 failed`.
+Ожидается: `test result: ok. 23 passed; 0 failed`.
 
 - [ ] **Step 5: Проверить линтером и закоммитить**
 
@@ -2408,8 +2423,9 @@ git commit -m "feat(db): filter the meetings list by query and participant"
 
 ## Проверка по завершении плана
 
-- [ ] `cd backend && cargo test --lib` — юнит-тесты домена зелёные (38 штук), база не нужна
-- [ ] `cd backend && cargo test` — плюс 20 интеграционных тестов против бранча `test`
+- [ ] `cd backend && cargo test --lib` — юнит-тесты зелёные (39: 38 доменных плюс один про текст
+      ошибки старта), база не нужна
+- [ ] `cd backend && cargo test` — плюс 23 интеграционных теста против бранча `test`
 - [ ] `cd backend && cargo clippy --all-targets -- -D warnings` — без предупреждений
 - [ ] `cd backend && cargo fmt --check` — без расхождений
 - [ ] `cd backend && cargo run` и `curl http://127.0.0.1:3000/api/health` → `{"status":"ok"}`
