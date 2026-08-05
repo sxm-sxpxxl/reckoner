@@ -4,6 +4,7 @@
 //! структуры, на выход — посчитанные значения. Все суммы в целых рублях.
 
 pub mod balance;
+pub mod reckoning;
 pub mod settle;
 pub mod shares;
 pub mod status;
@@ -13,6 +14,7 @@ pub mod types;
 pub mod testing;
 
 pub use balance::{contributions, net_balances};
+pub use reckoning::{Reckoning, reckon};
 pub use settle::{Transfer, settlement_plan};
 pub use shares::expense_shares;
 pub use status::MeetingStatus;
