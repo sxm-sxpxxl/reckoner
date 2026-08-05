@@ -466,6 +466,13 @@ git add backend/src/domain/shares.rs
 git commit -m "feat(domain): hand out expense remainder by largest fraction"
 ```
 
+> По итогам ревью этого таска добавились ещё два теста —
+> `spreads_several_leftover_roubles_one_each` (сто рублей на семерых: остаток из двух рублей уходит
+> двум людям по одному, а не одному целиком) и `gives_the_only_rouble_to_the_first_participant`
+> (граница, где целая часть у всех нулевая). Причина: без них реализация, сваливающая весь остаток
+> одному человеку, проходила все четыре теста. После них в `shares` шесть тестов — отсюда счёт
+> в следующих тасках.
+
 ---
 
 ### Task 4: Доли расхода — неполные доли в четвертях
@@ -508,7 +515,40 @@ git commit -m "feat(domain): hand out expense remainder by largest fraction"
         assert_eq!(shares[&people[1].id], 43);
         assert_eq!(shares.values().sum::<i64>(), 100);
     }
+
+    #[test]
+    fn excluded_participant_never_pays_even_a_remainder_rouble() {
+        let people = participants(3);
+        // 101 на двоих, третий исключён: 51 / 50 / 0.
+        let entry = expense_with_weights(people[0], 101, &[(people[2], 0)]);
+
+        let shares = expense_shares(&entry, &people);
+
+        assert_eq!(shares[&people[2].id], 0);
+        assert_eq!(shares[&people[0].id], 51);
+        assert_eq!(shares[&people[1].id], 50);
+        assert_eq!(shares.values().sum::<i64>(), 101);
+    }
+
+    #[test]
+    fn shares_do_not_depend_on_participant_order() {
+        let people = participants(3);
+        let entry = expense(people[0], 100);
+        let reversed: Vec<Participant> = people.iter().rev().copied().collect();
+
+        // Порядок строк, пришедших из базы, при равных ключах сортировки
+        // не гарантирован — результат не должен от него зависеть.
+        assert_eq!(
+            expense_shares(&entry, &people),
+            expense_shares(&entry, &reversed)
+        );
+    }
 ```
+
+Первый из этих двух тестов проверяет, что участник с нулевой долей не получает рубля остатка. Это
+свойство обеспечивает убывающая сортировка по остатку, реализованная ещё в Task 3, но проверить его
+стало возможно только сейчас, когда веса умеют различаться. Второй закрепляет тай-брейк
+`(position, id)`: без него результат зависел бы от порядка элементов во входном срезе.
 
 Дописать `expense_with_weights` в импорт в `mod tests`:
 
@@ -520,7 +560,12 @@ git commit -m "feat(domain): hand out expense remainder by largest fraction"
 
 Run: `cd backend && cargo test --lib shares`
 
-Ожидается: `respects_half_shares` падает — получено 33/33/34 вместо 50/25/25, потому что веса пока игнорируются.
+Ожидается: `respects_half_shares` падает — получено 34/33/33 вместо 50/25/25, потому что веса пока
+игнорируются. `respects_three_quarter_share_with_remainder` падает: 50 вместо 57.
+
+Этот второй тест — первый в файле, который закрепляет **убывающее** направление сортировки по
+остатку. До него все веса были равны, все остатки совпадали, и разворот сравнения не сломал бы ни
+одного теста.
 
 - [ ] **Step 3: Учесть веса**
 
@@ -606,7 +651,7 @@ use super::types::{Entry, Participant, ParticipantId};
 
 Run: `cd backend && cargo test --lib shares`
 
-Ожидается: `test result: ok. 6 passed; 0 failed`.
+Ожидается: `test result: ok. 10 passed; 0 failed`.
 
 Внимание: `total_quarters` может быть нулём, если у всех доля 0 — тогда делим на ноль и получаем панику. Это закрывает Task 5.
 
@@ -653,27 +698,22 @@ git commit -m "feat(domain): respect partial expense shares in quarters"
         }
     }
 
-    #[test]
-    fn excluded_participant_never_pays_even_a_remainder_rouble() {
-        let people = participants(3);
-        // 101 на двоих, третий исключён: 51 / 50 / 0, остаток не должен
-        // достаться исключённому.
-        let entry = expense_with_weights(people[0], 101, &[(people[2], 0)]);
-
-        let shares = expense_shares(&entry, &people);
-
-        assert_eq!(shares[&people[2].id], 0);
-        assert_eq!(shares[&people[0].id], 51);
-        assert_eq!(shares[&people[1].id], 50);
-        assert_eq!(shares.values().sum::<i64>(), 101);
-    }
 ```
 
-- [ ] **Step 2: Запустить тесты и убедиться, что новые падают**
+Второй краевой случай — «исключённый не платит ни рубля остатка» — в этом таске **не появляется**:
+он уже выполняется после Task 4 и проверяется там тестом
+`excluded_participant_never_pays_even_a_remainder_rouble`. Причина в том, что участник с нулевым
+весом всегда имеет нулевой остаток, а сортировка по убыванию остатка ставит его позади всех, у кого
+остаток положительный; рублей остатка при этом всегда строго меньше, чем участников с положительным
+остатком. Дополнительный фильтр для этого не нужен.
+
+- [ ] **Step 2: Запустить тест и убедиться, что он падает**
 
 Run: `cd backend && cargo test --lib shares`
 
-Ожидается: `falls_back_to_equal_split_when_everyone_is_excluded` падает с паникой деления на ноль (`attempt to divide by zero`). `excluded_participant_never_pays_even_a_remainder_rouble` падает на `assert_eq!(shares[&people[2].id], 0)` — исключённому достался рубль остатка.
+Ожидается: `falls_back_to_equal_split_when_everyone_is_excluded` падает с паникой деления на ноль
+(`attempt to divide by zero`) — единственный красный тест в этом таске. Остальные должны остаться
+зелёными.
 
 - [ ] **Step 3: Обработать нулевые веса**
 
@@ -729,16 +769,15 @@ pub fn expense_shares(
         let base = (numerator / i128::from(total_quarters)) as i64;
         shares.insert(participant.id, base);
         distributed += base;
-        // Исключённый из расхода не участвует в раздаче остатка: он не должен
-        // заплатить ни рубля.
-        if *quarters > 0 {
-            remainders.push((*participant, numerator % i128::from(total_quarters)));
-        }
+        remainders.push((*participant, numerator % i128::from(total_quarters)));
     }
 
-    // Остаток рублей — тем, у кого дробная часть больше. При равенстве —
-    // по порядку добавления, затем по id, чтобы порядок был полным и результат
-    // не зависел от порядка строк, пришедших из базы.
+    // Остаток рублей — тем, у кого дробная часть больше. Убывание по остатку —
+    // не косметика: у участника с нулевой долей остаток всегда нулевой, а рублей
+    // остатка всегда строго меньше, чем участников с положительным остатком, —
+    // вместе это и не даёт исключённому из расхода заплатить ни рубля. При
+    // равенстве — по порядку добавления, затем по id, чтобы порядок был полным
+    // и результат не зависел от порядка строк, пришедших из базы.
     remainders.sort_by_key(|(participant, remainder)| {
         (Reverse(*remainder), participant.position, participant.id)
     });
@@ -764,15 +803,15 @@ pub fn expense_shares(
 use super::types::{Entry, Participant, ParticipantId, FULL_QUARTERS};
 ```
 
-Обратите внимание: с фильтром `if *quarters > 0` раздача остатка идёт только среди участников
-с положительным весом, и строгая оценка «остаток меньше числа таких участников» продолжает
-выполняться — рублей всегда хватает на раздачу, и исключённому не достаётся ни одного.
+Обратите внимание: единственное изменение в этом таске — откат на равное деление при нулевой сумме
+весов. Фильтра по нулевому весу в раздаче остатка нет и не нужно: это свойство уже обеспечено
+сортировкой (см. комментарий над ней) и проверено в Task 4.
 
 - [ ] **Step 4: Запустить тесты и убедиться, что они зелёные**
 
 Run: `cd backend && cargo test --lib shares`
 
-Ожидается: `test result: ok. 8 passed; 0 failed`.
+Ожидается: `test result: ok. 11 passed; 0 failed`.
 
 - [ ] **Step 5: Коммит**
 
@@ -1933,7 +1972,7 @@ Run: `cd backend && cargo test --lib properties`
 
 Run: `cd backend && cargo test`
 
-Ожидается: все тесты зелёные. Ориентир по количеству — 8 в `shares`, 7 в `balance`, 4 в `settle`, 4 в `status`, 7 в `reckoning`, 2 в `properties`.
+Ожидается: все тесты зелёные. Ориентир по количеству — 11 в `shares`, 7 в `balance`, 4 в `settle`, 4 в `status`, 7 в `reckoning`, 2 в `properties`.
 
 Run: `cd backend && cargo clippy --all-targets -- -D warnings`
 
