@@ -1,5 +1,6 @@
 mod support;
 
+use backend::db::entries::{self, NewEntry};
 use backend::db::meetings::{self, MeetingPatch, NewMeeting};
 use backend::db::participants;
 use backend::db::records::EntryKindRow;
@@ -301,4 +302,210 @@ async fn position_never_reuses_a_number_after_a_deletion() {
         .map(|row| row.position)
         .collect();
     assert_eq!(positions, [1, 2]);
+}
+
+#[tokio::test]
+async fn stores_an_expense_with_partial_shares() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("плательщик");
+    let other = participants::insert(&mut tx, meeting_id, "Влад", "🦉")
+        .await
+        .expect("второй");
+
+    let entry = entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Expense,
+            payer_id: payer.id,
+            recipient_id: None,
+            amount_rubles: 8400,
+            description: "Продукты на все дни".to_owned(),
+            occurred_at: None,
+            shares: vec![(other.id, 2)],
+        },
+    )
+    .await
+    .expect("вставка расхода");
+
+    assert_eq!(entry.amount_rubles, 8400);
+    assert_eq!(entry.kind, EntryKindRow::Expense);
+    assert!(entry.recipient_id.is_none());
+
+    let shares = entries::shares_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("доли");
+    assert_eq!(shares.len(), 1);
+    assert_eq!(shares[0].participant_id, other.id);
+    assert_eq!(shares[0].weight_quarters, 2);
+}
+
+#[tokio::test]
+async fn stores_a_transfer() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let from = participants::insert(&mut tx, meeting_id, "Егор", "🐸")
+        .await
+        .expect("отправитель");
+    let to = participants::insert(&mut tx, meeting_id, "Влад", "🦉")
+        .await
+        .expect("получатель");
+
+    let transfer = entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Transfer,
+            payer_id: from.id,
+            recipient_id: Some(to.id),
+            amount_rubles: 3425,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("вставка перевода");
+
+    assert_eq!(transfer.recipient_id, Some(to.id));
+    assert_eq!(transfer.kind, EntryKindRow::Transfer);
+}
+
+#[tokio::test]
+async fn rejects_a_self_transfer() {
+    let pool = test_pool().await;
+    // Отдельная транзакция: нарушение CHECK переводит транзакцию Postgres
+    // в сбойное состояние, и все последующие запросы в ней тоже упали бы.
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let person = participants::insert(&mut tx, meeting_id, "Егор", "🐸")
+        .await
+        .expect("участник");
+
+    // Слой API проверит это раньше и вернёт 422, но защита в базе — последняя
+    // линия, и она должна работать.
+    let rejected = entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Transfer,
+            payer_id: person.id,
+            recipient_id: Some(person.id),
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await;
+
+    assert!(rejected.is_err(), "перевод самому себе должен быть отбит");
+}
+
+#[tokio::test]
+async fn deleting_a_participant_removes_their_entries() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("плательщик");
+    let other = participants::insert(&mut tx, meeting_id, "Влад", "🦉")
+        .await
+        .expect("второй");
+
+    entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Expense,
+            payer_id: payer.id,
+            recipient_id: None,
+            amount_rubles: 1000,
+            description: "Его расход".to_owned(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("расход плательщика");
+
+    entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Transfer,
+            payer_id: other.id,
+            recipient_id: Some(payer.id),
+            amount_rubles: 500,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("перевод в его адрес");
+
+    participants::delete(&mut tx, payer.id)
+        .await
+        .expect("удаление участника");
+
+    // Требование дизайна: удаление участника уносит и записи, где он
+    // плательщик, и записи, где он получатель.
+    let left = entries::list_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("записи");
+    assert!(left.is_empty(), "остались записи: {left:?}");
+}
+
+#[tokio::test]
+async fn lists_entries_newest_first() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+    let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("плательщик");
+
+    let early = chrono::DateTime::parse_from_rfc3339("2026-07-23T20:00:00Z")
+        .expect("дата")
+        .to_utc();
+    let late = chrono::DateTime::parse_from_rfc3339("2026-07-24T23:00:00Z")
+        .expect("дата")
+        .to_utc();
+
+    for (amount, when) in [(100, early), (200, late)] {
+        entries::insert(
+            &mut tx,
+            meeting_id,
+            NewEntry {
+                kind: EntryKindRow::Expense,
+                payer_id: payer.id,
+                recipient_id: None,
+                amount_rubles: amount,
+                description: String::new(),
+                occurred_at: Some(when),
+                shares: Vec::new(),
+            },
+        )
+        .await
+        .expect("расход");
+    }
+
+    let listed = entries::list_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("записи");
+
+    // История в интерфейсе идёт новыми сверху.
+    assert_eq!(listed[0].amount_rubles, 200);
+    assert_eq!(listed[1].amount_rubles, 100);
 }

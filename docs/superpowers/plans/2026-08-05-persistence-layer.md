@@ -1222,9 +1222,16 @@ async fn stores_an_expense_with_partial_shares() {
     assert_eq!(shares[0].participant_id, other.id);
     assert_eq!(shares[0].weight_quarters, 2);
 }
+```
 
+Тест на перевод разделён на два. Проверка перевода самому себе живёт в **отдельной** транзакции:
+нарушение CHECK переводит транзакцию Postgres в сбойное состояние, и любой следующий запрос в ней
+тоже упал бы. Держать обе проверки в одной транзакции можно, только если отбитая идёт последней, —
+а это скрытая зависимость от порядка, которая ломается при добавлении ещё одной проверки.
+
+```rust
 #[tokio::test]
-async fn stores_a_transfer_and_rejects_a_self_transfer() {
+async fn stores_a_transfer() {
     let pool = test_pool().await;
     let mut tx = pool.begin().await.expect("транзакция");
     let meeting_id = seed_meeting(&mut tx).await;
@@ -1253,16 +1260,30 @@ async fn stores_a_transfer_and_rejects_a_self_transfer() {
     .expect("вставка перевода");
 
     assert_eq!(transfer.recipient_id, Some(to.id));
+    assert_eq!(transfer.kind, EntryKindRow::Transfer);
+}
 
-    // Перевод самому себе отбивает CHECK в схеме. Слой API проверит это раньше
-    // и вернёт 422, но защита в базе — последняя линия, и она должна работать.
+#[tokio::test]
+async fn rejects_a_self_transfer() {
+    let pool = test_pool().await;
+    // Отдельная транзакция: нарушение CHECK переводит транзакцию Postgres
+    // в сбойное состояние, и все последующие запросы в ней тоже упали бы.
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let person = participants::insert(&mut tx, meeting_id, "Егор", "🐸")
+        .await
+        .expect("участник");
+
+    // Слой API проверит это раньше и вернёт 422, но защита в базе — последняя
+    // линия, и она должна работать.
     let rejected = entries::insert(
         &mut tx,
         meeting_id,
         NewEntry {
             kind: EntryKindRow::Transfer,
-            payer_id: from.id,
-            recipient_id: Some(from.id),
+            payer_id: person.id,
+            recipient_id: Some(person.id),
             amount_rubles: 100,
             description: String::new(),
             occurred_at: None,
@@ -1407,9 +1428,6 @@ pub struct NewEntry {
     pub shares: Vec<(Uuid, i16)>,
 }
 
-const COLUMNS: &str = "id, meeting_id, kind, payer_id, recipient_id, \
-                       amount_rubles, description, occurred_at, created_at";
-
 /// Вставляет запись и её доли. Вызывающий обязан передать транзакцию: запись
 /// без своих долей — это неверный расчёт, а не просто неполные данные.
 pub async fn insert(
@@ -1417,12 +1435,13 @@ pub async fn insert(
     meeting_id: Uuid,
     entry: NewEntry,
 ) -> Result<EntryRow, sqlx::Error> {
-    let row: EntryRow = sqlx::query_as(&format!(
+    let row: EntryRow = sqlx::query_as(
         "insert into entries \
              (meeting_id, kind, payer_id, recipient_id, amount_rubles, description, occurred_at) \
          values ($1, $2, $3, $4, $5, $6, coalesce($7, now())) \
-         returning {COLUMNS}"
-    ))
+         returning id, meeting_id, kind, payer_id, recipient_id, \
+                   amount_rubles, description, occurred_at, created_at",
+    )
     .bind(meeting_id)
     .bind(entry.kind)
     .bind(entry.payer_id)
@@ -1449,14 +1468,20 @@ pub async fn insert(
 }
 
 /// Новые сверху — так история показана в интерфейсе.
+///
+/// Второй ключ сортировки не украшение: две записи с одинаковым `occurred_at`
+/// без него шли бы в произвольном порядке, и один и тот же запрос мог бы
+/// вернуть историю в разном виде.
 pub async fn list_for_meeting(
     conn: &mut PgConnection,
     meeting_id: Uuid,
 ) -> Result<Vec<EntryRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
-        "select {COLUMNS} from entries where meeting_id = $1 \
-         order by occurred_at desc, id"
-    ))
+    sqlx::query_as(
+        "select id, meeting_id, kind, payer_id, recipient_id, \
+                amount_rubles, description, occurred_at, created_at \
+         from entries where meeting_id = $1 \
+         order by occurred_at desc, id",
+    )
     .bind(meeting_id)
     .fetch_all(conn)
     .await
@@ -1494,15 +1519,11 @@ pub async fn delete(conn: &mut PgConnection, id: Uuid) -> Result<bool, sqlx::Err
 pub mod entries;
 ```
 
-Обратите внимание на `order by occurred_at desc, id`. Второй ключ не украшение: две записи,
-созданные в одну и ту же миллисекунду, без него шли бы в произвольном порядке, и один и тот же
-запрос мог бы вернуть историю в разном виде.
-
 - [ ] **Step 4: Прогнать тесты**
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 13 passed; 0 failed`.
+Ожидается: `test result: ok. 15 passed; 0 failed`.
 
 - [ ] **Step 5: Закоммитить**
 
