@@ -1,10 +1,12 @@
 mod support;
 
 use backend::db::entries::{self, NewEntry};
+use backend::db::facts;
 use backend::db::log;
 use backend::db::meetings::{self, MeetingPatch, NewMeeting};
 use backend::db::participants;
 use backend::db::records::EntryKindRow;
+use backend::domain::{MeetingStatus, ParticipantId, reckon};
 use chrono::NaiveDate;
 use support::test_pool;
 
@@ -532,4 +534,104 @@ async fn keeps_the_newest_log_records_within_the_limit() {
     assert_eq!(recent[0].text, "событие 4");
     assert_eq!(recent[1].text, "событие 3");
     assert_eq!(recent[2].text, "событие 2");
+}
+
+#[tokio::test]
+async fn reckons_the_dacha_meeting_from_stored_rows() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let nastya = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("Настя");
+    let vlad = participants::insert(&mut tx, meeting_id, "Влад", "🦉")
+        .await
+        .expect("Влад");
+    let egor = participants::insert(&mut tx, meeting_id, "Егор", "🐸")
+        .await
+        .expect("Егор");
+    let marina = participants::insert(&mut tx, meeting_id, "Марина", "🦩")
+        .await
+        .expect("Марина");
+
+    for (payer, amount) in [(vlad.id, 8400), (nastya.id, 3200), (marina.id, 2100)] {
+        entries::insert(
+            &mut tx,
+            meeting_id,
+            NewEntry {
+                kind: EntryKindRow::Expense,
+                payer_id: payer,
+                recipient_id: None,
+                amount_rubles: amount,
+                description: String::new(),
+                occurred_at: None,
+                shares: Vec::new(),
+            },
+        )
+        .await
+        .expect("расход");
+    }
+
+    let stored = facts::load(&mut tx, meeting_id)
+        .await
+        .expect("чтение фактов");
+    let reckoning = reckon(stored.as_facts());
+
+    // Те же числа, что в юнит-тестах домена и на скриншотах дизайна —
+    // но приехавшие через Postgres.
+    assert_eq!(reckoning.spent, 13700);
+    assert_eq!(reckoning.per_person, 3425);
+    assert_eq!(reckoning.net[&ParticipantId(nastya.id)], -225);
+    assert_eq!(reckoning.net[&ParticipantId(vlad.id)], 4975);
+    assert_eq!(reckoning.net[&ParticipantId(egor.id)], -3425);
+    assert_eq!(reckoning.net[&ParticipantId(marina.id)], -1325);
+    assert_eq!(reckoning.status, MeetingStatus::Alarm(3));
+}
+
+#[tokio::test]
+async fn maps_partial_shares_into_the_domain() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let payer = participants::insert(&mut tx, meeting_id, "Раз", "🐻")
+        .await
+        .expect("первый");
+    let half = participants::insert(&mut tx, meeting_id, "Два", "🦊")
+        .await
+        .expect("второй");
+    let excluded = participants::insert(&mut tx, meeting_id, "Три", "🐸")
+        .await
+        .expect("третий");
+
+    // Веса 4, 2, 0 из 6: целые части долей 66 и 33, распределено 99, остаток
+    // рубля уходит плательщику — у него дробная часть больше (4/6 против 2/6).
+    // Итоговые доли 67 / 33 / 0.
+    entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Expense,
+            payer_id: payer.id,
+            recipient_id: None,
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: vec![(half.id, 2), (excluded.id, 0)],
+        },
+    )
+    .await
+    .expect("расход с долями");
+
+    let stored = facts::load(&mut tx, meeting_id)
+        .await
+        .expect("чтение фактов");
+    let reckoning = reckon(stored.as_facts());
+
+    // Заплатил 100, своя доля 67.
+    assert_eq!(reckoning.net[&ParticipantId(payer.id)], 33);
+    assert_eq!(reckoning.net[&ParticipantId(half.id)], -33);
+    // Исключённый не платит ничего, в том числе не получает рубль остатка.
+    assert_eq!(reckoning.net[&ParticipantId(excluded.id)], 0);
 }

@@ -1837,9 +1837,12 @@ fn build(
             .or_default()
             .push(Weight {
                 participant_id: ParticipantId(share.participant_id),
-                // В базе диапазон 0..=3 задан CHECK, поэтому приведение
-                // к u8 не может потерять данные.
-                quarters: share.weight_quarters as u8,
+                // Диапазон 0..=3 задан CHECK в схеме, поэтому преобразование
+                // не может не сойтись. Берём `try_from`, а не `as`: если схема
+                // и код однажды разойдутся, лучше упасть здесь, чем молча
+                // завернуть значение и испортить расчёт долей.
+                quarters: u8::try_from(share.weight_quarters)
+                    .expect("weight_quarters вне диапазона 0..=3 — схема и код разошлись"),
             });
     }
 
@@ -1874,7 +1877,7 @@ pub mod facts;
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 16 passed; 0 failed`.
+Ожидается: `test result: ok. 18 passed; 0 failed`.
 
 Если тест про доли упал — не правьте ожидания, пока не пересчитаете руками. Веса 4, 2, 0 дают сумму
 6; целые части `100×4/6 = 66` (остаток 4) и `100×2/6 = 33` (остаток 2); распределено 99; рубль
