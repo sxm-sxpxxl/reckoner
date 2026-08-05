@@ -524,14 +524,31 @@ Run: `cd backend && cargo test --lib shares`
 
 - [ ] **Step 3: Учесть веса**
 
-В `expense_shares` заменить вычисление `total_quarters` и цикл начисления. Итоговое тело функции:
+В `expense_shares` меняется только получение веса: вместо константы `FULL_QUARTERS` для всех
+берём `entry.quarters_for` для каждого. Остальное — предусловия, раздача остатка, сортировка —
+остаётся ровно как после Task 3. Итоговое тело функции:
 
 ```rust
 pub fn expense_shares(
     entry: &Entry,
     participants: &[Participant],
 ) -> BTreeMap<ParticipantId, i64> {
+    debug_assert!(
+        entry.amount >= 0,
+        "сумма расхода не может быть отрицательной: это гарантирует слой API"
+    );
+    debug_assert!(
+        participants
+            .iter()
+            .map(|participant| participant.id)
+            .collect::<BTreeSet<_>>()
+            .len()
+            == participants.len(),
+        "участники должны быть уникальны: доли ключуются по id"
+    );
+
     let mut shares: BTreeMap<ParticipantId, i64> = BTreeMap::new();
+    // Не только оптимизация: этот выход не даёт `total_quarters` стать нулём.
     if participants.is_empty() {
         return shares;
     }
@@ -547,19 +564,21 @@ pub fn expense_shares(
     let mut distributed: i64 = 0;
     for (participant, quarters) in &weighted {
         let numerator = i128::from(entry.amount) * i128::from(*quarters);
+        // Вес участника не больше суммы весов, поэтому `base` по модулю
+        // не превосходит `amount` — сужение до i64 безопасно.
         let base = (numerator / i128::from(total_quarters)) as i64;
         shares.insert(participant.id, base);
         distributed += base;
         remainders.push((*participant, numerator % i128::from(total_quarters)));
     }
 
-    // Остаток рублей — тем, у кого дробная часть больше; при равенстве
-    // по порядку добавления, чтобы результат был детерминированным.
-    remainders.sort_by(|left, right| {
-        right
-            .1
-            .cmp(&left.1)
-            .then(left.0.position.cmp(&right.0.position))
+    // Остаток рублей — тем, у кого дробная часть больше. Убывание по остатку —
+    // не косметика: именно оно не даст рублю остатка достаться участнику
+    // с нулевой долей (его остаток всегда 0). При равенстве — по порядку
+    // добавления, затем по id, чтобы порядок был полным и результат не зависел
+    // от порядка строк, пришедших из базы.
+    remainders.sort_by_key(|(participant, remainder)| {
+        (Reverse(*remainder), participant.position, participant.id)
     });
 
     let mut leftover = entry.amount - distributed;
@@ -665,7 +684,22 @@ pub fn expense_shares(
     entry: &Entry,
     participants: &[Participant],
 ) -> BTreeMap<ParticipantId, i64> {
+    debug_assert!(
+        entry.amount >= 0,
+        "сумма расхода не может быть отрицательной: это гарантирует слой API"
+    );
+    debug_assert!(
+        participants
+            .iter()
+            .map(|participant| participant.id)
+            .collect::<BTreeSet<_>>()
+            .len()
+            == participants.len(),
+        "участники должны быть уникальны: доли ключуются по id"
+    );
+
     let mut shares: BTreeMap<ParticipantId, i64> = BTreeMap::new();
+    // Первая из двух причин, по которым `total_quarters` не может быть нулём.
     if participants.is_empty() {
         return shares;
     }
@@ -676,7 +710,8 @@ pub fn expense_shares(
         .collect();
     let mut total_quarters: i64 = weighted.iter().map(|(_, quarters)| *quarters).sum();
 
-    // Расход, из которого исключили всех, спека требует делить на всех поровну.
+    // Вторая: расход, из которого исключили всех, спека требует делить на всех
+    // поровну — иначе здесь было бы деление на ноль.
     if total_quarters == 0 {
         for (_, quarters) in weighted.iter_mut() {
             *quarters = FULL_QUARTERS;
@@ -689,6 +724,8 @@ pub fn expense_shares(
     let mut distributed: i64 = 0;
     for (participant, quarters) in &weighted {
         let numerator = i128::from(entry.amount) * i128::from(*quarters);
+        // Вес участника не больше суммы весов, поэтому `base` по модулю
+        // не превосходит `amount` — сужение до i64 безопасно.
         let base = (numerator / i128::from(total_quarters)) as i64;
         shares.insert(participant.id, base);
         distributed += base;
@@ -699,13 +736,11 @@ pub fn expense_shares(
         }
     }
 
-    // Остаток рублей — тем, у кого дробная часть больше; при равенстве
-    // по порядку добавления, чтобы результат был детерминированным.
-    remainders.sort_by(|left, right| {
-        right
-            .1
-            .cmp(&left.1)
-            .then(left.0.position.cmp(&right.0.position))
+    // Остаток рублей — тем, у кого дробная часть больше. При равенстве —
+    // по порядку добавления, затем по id, чтобы порядок был полным и результат
+    // не зависел от порядка строк, пришедших из базы.
+    remainders.sort_by_key(|(participant, remainder)| {
+        (Reverse(*remainder), participant.position, participant.id)
     });
 
     let mut leftover = entry.amount - distributed;
@@ -728,6 +763,10 @@ pub fn expense_shares(
 ```rust
 use super::types::{Entry, Participant, ParticipantId, FULL_QUARTERS};
 ```
+
+Обратите внимание: с фильтром `if *quarters > 0` раздача остатка идёт только среди участников
+с положительным весом, и строгая оценка «остаток меньше числа таких участников» продолжает
+выполняться — рублей всегда хватает на раздачу, и исключённому не достаётся ни одного.
 
 - [ ] **Step 4: Запустить тесты и убедиться, что они зелёные**
 
