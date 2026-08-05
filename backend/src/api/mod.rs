@@ -6,6 +6,8 @@
 //! к спеке, а не дописать запрос здесь.
 
 pub mod error;
+pub mod money;
+pub mod texts;
 
 use axum::extract::{DefaultBodyLimit, FromRequest, Request};
 use axum::routing::get;
