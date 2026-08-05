@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::types::{Entry, FULL_QUARTERS, Participant, ParticipantId};
+use super::types::{Entry, Participant, ParticipantId};
 
 /// Доли одного расхода в целых рублях.
 ///
@@ -25,26 +25,27 @@ pub fn expense_shares(entry: &Entry, participants: &[Participant]) -> BTreeMap<P
     );
 
     let mut shares: BTreeMap<ParticipantId, i64> = BTreeMap::new();
-    // Не только оптимизация: без участников total_quarters ниже был бы
-    // нулевым. (Второй путь к нулю появится в следующей задаче.)
+    // Не только оптимизация: этот выход не даёт `total_quarters` стать нулём.
     if participants.is_empty() {
         return shares;
     }
 
-    let total_quarters = FULL_QUARTERS * participants.len() as i64;
+    let weighted: Vec<(Participant, i64)> = participants
+        .iter()
+        .map(|participant| (*participant, entry.quarters_for(participant.id)))
+        .collect();
+    let total_quarters: i64 = weighted.iter().map(|(_, quarters)| *quarters).sum();
 
     // Целая часть каждому, дробные части копим, чтобы раздать остаток.
     let mut remainders: Vec<(Participant, i128)> = Vec::new();
     let mut distributed: i64 = 0;
-    for participant in participants {
-        let numerator = i128::from(entry.amount) * i128::from(FULL_QUARTERS);
-        // Вес участника не превышает суммы весов, поэтому |base| не больше
-        // amount и сужение до i64 безопасно.
+    for (participant, quarters) in &weighted {
+        let numerator = i128::from(entry.amount) * i128::from(*quarters);
+        // Вес участника не больше суммы весов, поэтому `base` по модулю
+        // не превосходит `amount` — сужение до i64 безопасно.
         let base = (numerator / i128::from(total_quarters)) as i64;
         shares.insert(participant.id, base);
         distributed += base;
-        // Веса пока одинаковы у всех, поэтому дробные части совпадают —
-        // сортировка ниже готовит почву для частичных долей.
         remainders.push((*participant, numerator % i128::from(total_quarters)));
     }
 
@@ -74,7 +75,7 @@ pub fn expense_shares(entry: &Entry, participants: &[Participant]) -> BTreeMap<P
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::testing::{expense, participants};
+    use crate::domain::testing::{expense, expense_with_weights, participants};
 
     #[test]
     fn splits_evenly_when_amount_divides() {
@@ -150,5 +151,32 @@ mod tests {
         assert_eq!(shares[&people[0].id], 1);
         assert_eq!(shares[&people[1].id], 0);
         assert_eq!(shares[&people[2].id], 0);
+    }
+
+    #[test]
+    fn respects_half_shares() {
+        let people = participants(3);
+        // Двое делят половину, один — полную долю: веса 4, 2, 2 из 8.
+        let entry = expense_with_weights(people[0], 100, &[(people[1], 2), (people[2], 2)]);
+
+        let shares = expense_shares(&entry, &people);
+
+        assert_eq!(shares[&people[0].id], 50);
+        assert_eq!(shares[&people[1].id], 25);
+        assert_eq!(shares[&people[2].id], 25);
+    }
+
+    #[test]
+    fn respects_three_quarter_share_with_remainder() {
+        let people = participants(2);
+        // Веса 4 и 3 из 7: точные доли 57.14 и 42.86.
+        let entry = expense_with_weights(people[0], 100, &[(people[1], 3)]);
+
+        let shares = expense_shares(&entry, &people);
+
+        // Дробная часть больше у второго (6/7 против 1/7), рубль его.
+        assert_eq!(shares[&people[0].id], 57);
+        assert_eq!(shares[&people[1].id], 43);
+        assert_eq!(shares.values().sum::<i64>(), 100);
     }
 }
