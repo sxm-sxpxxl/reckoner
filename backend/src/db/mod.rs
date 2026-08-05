@@ -31,6 +31,16 @@ pub async fn connect(url: &str) -> Result<PgPool, StartupError> {
         .map_err(StartupError::Connect)
 }
 
+/// Применяет миграции при старте. Инстанс один, поэтому отдельный шаг в деплое
+/// не нужен. `migrate!` читает каталог при компиляции — база для сборки не
+/// требуется, в отличие от макросов `query!`.
+pub async fn run_migrations(pool: &PgPool) -> Result<(), StartupError> {
+    sqlx::migrate!("./migrations")
+        .run(pool)
+        .await
+        .map_err(StartupError::Migrate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
