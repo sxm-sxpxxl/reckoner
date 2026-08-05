@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::types::{Entry, Participant, ParticipantId};
+use super::types::{Entry, FULL_QUARTERS, Participant, ParticipantId};
 
 /// Доли одного расхода в целых рублях.
 ///
@@ -26,17 +26,26 @@ pub fn expense_shares(entry: &Entry, participants: &[Participant]) -> BTreeMap<P
 
     let mut shares: BTreeMap<ParticipantId, i64> = BTreeMap::new();
     // Не только оптимизация: это первая из двух причин, по которым
-    // `total_quarters` не может быть нулём. Вторую — нулевые веса у всех —
-    // закрывает следующая задача.
+    // `total_quarters` не может быть нулём.
     if participants.is_empty() {
         return shares;
     }
 
-    let weighted: Vec<(Participant, i64)> = participants
+    let mut weighted: Vec<(Participant, i64)> = participants
         .iter()
         .map(|participant| (*participant, entry.quarters_for(participant.id)))
         .collect();
-    let total_quarters: i64 = weighted.iter().map(|(_, quarters)| *quarters).sum();
+    let mut total_quarters: i64 = weighted.iter().map(|(_, quarters)| *quarters).sum();
+
+    // Вторая из двух причин, по которым `total_quarters` не может быть нулём:
+    // расход, из которого исключили всех, спека требует делить на всех поровну —
+    // иначе здесь было бы деление на ноль.
+    if total_quarters == 0 {
+        for (_, quarters) in weighted.iter_mut() {
+            *quarters = FULL_QUARTERS;
+        }
+        total_quarters = FULL_QUARTERS * participants.len() as i64;
+    }
 
     // Целая часть каждому, дробные части копим, чтобы раздать остаток.
     let mut remainders: Vec<(Participant, i128)> = Vec::new();
@@ -195,6 +204,28 @@ mod tests {
         assert_eq!(shares[&people[0].id], 51);
         assert_eq!(shares[&people[1].id], 50);
         assert_eq!(shares.values().sum::<i64>(), 101);
+    }
+
+    #[test]
+    fn falls_back_to_equal_split_when_everyone_is_excluded() {
+        let people = participants(4);
+        let entry = expense_with_weights(
+            people[0],
+            8400,
+            &[
+                (people[0], 0),
+                (people[1], 0),
+                (people[2], 0),
+                (people[3], 0),
+            ],
+        );
+
+        let shares = expense_shares(&entry, &people);
+
+        // Спека: если сумма весов нулевая, расход делится на всех поровну.
+        for person in &people {
+            assert_eq!(shares[&person.id], 2100, "участник {}", person.position);
+        }
     }
 
     #[test]
