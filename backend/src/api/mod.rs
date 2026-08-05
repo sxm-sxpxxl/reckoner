@@ -36,7 +36,12 @@ pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/meetings", post(meetings::create))
-        .route("/api/meetings/:id", get(meetings::show))
+        .route(
+            "/api/meetings/:id",
+            get(meetings::show)
+                .patch(meetings::update)
+                .delete(meetings::destroy),
+        )
         .layer(DefaultBodyLimit::max(JSON_BODY_LIMIT))
         .layer(cors)
         .with_state(pool)

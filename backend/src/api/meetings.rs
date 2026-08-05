@@ -117,3 +117,92 @@ pub async fn create(
 
     Ok((StatusCode::CREATED, Json(view)))
 }
+
+/// `None` в поле означает «не менять». Пустая строка в описании — значение,
+/// а не отсутствие: описание можно убрать.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMeeting {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub emoji: Option<String>,
+    pub held_on: Option<NaiveDate>,
+}
+
+pub async fn update_meeting(
+    conn: &mut PgConnection,
+    id: Uuid,
+    body: UpdateMeeting,
+) -> Result<MeetingView, ApiError> {
+    // Название нельзя опустошить: в отличие от создания, здесь человек смотрит
+    // в это поле, и подстановка «Новая встреча» вместо его текста была бы
+    // не значением по умолчанию, а подменой.
+    let title = match body.title.as_deref().map(str::trim) {
+        Some("") => {
+            return Err(ApiError::validation(
+                "title",
+                "название не может быть пустым",
+            ));
+        }
+        Some(value) => Some(value.to_owned()),
+        None => None,
+    };
+
+    let emoji = match body.emoji.as_deref().map(str::trim) {
+        Some("") => {
+            return Err(ApiError::validation("emoji", "эмодзи не может быть пустым"));
+        }
+        Some(value) => Some(value.to_owned()),
+        None => None,
+    };
+
+    db::meetings::update(
+        &mut *conn,
+        id,
+        db::meetings::MeetingPatch {
+            title,
+            description: body.description.map(|value| value.trim().to_owned()),
+            emoji,
+            held_on: body.held_on,
+        },
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    db::log::append(&mut *conn, id, texts::MEETING_EDITED).await?;
+
+    load_view(conn, id).await
+}
+
+/// Единственная мутирующая операция, которая не возвращает встречу: возвращать
+/// нечего.
+pub async fn delete_meeting(conn: &mut PgConnection, id: Uuid) -> Result<(), ApiError> {
+    if db::meetings::delete(conn, id).await? {
+        Ok(())
+    } else {
+        Err(ApiError::NotFound)
+    }
+}
+
+pub async fn update(
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+    JsonBody(body): JsonBody<UpdateMeeting>,
+) -> Result<Json<MeetingView>, ApiError> {
+    let mut tx = pool.begin().await?;
+    let view = update_meeting(&mut tx, id, body).await?;
+    tx.commit().await?;
+
+    Ok(Json(view))
+}
+
+pub async fn destroy(
+    State(pool): State<PgPool>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    // Транзакция не нужна: один оператор, каскады внутри него атомарны.
+    let mut conn = pool.acquire().await?;
+    delete_meeting(&mut conn, id).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}

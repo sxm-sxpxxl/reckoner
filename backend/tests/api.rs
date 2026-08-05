@@ -12,6 +12,19 @@ use chrono::{NaiveDate, TimeZone, Utc};
 use support::test_pool;
 use uuid::Uuid;
 
+/// Имя поля из ошибки валидации.
+///
+/// Отдельная функция, а не `matches!` с guard'ом в каждом тесте: поле в ошибке
+/// объявлено как `&'static str`, и режимы связывания в паттерне делают из него
+/// то `&str`, то `&&str` — сравнение приходилось бы подгонять под компилятор.
+/// Заодно при ошибке другого рода в сообщении видно, что пришло вместо неё.
+fn validation_field(error: &ApiError) -> &str {
+    match error {
+        ApiError::Validation { field, .. } => field,
+        other => panic!("ожидалась ошибка валидации, получено: {other:?}"),
+    }
+}
+
 /// Встреча-заготовка с четырьмя участниками — «Дача у Влада» из спеки.
 /// Возвращает идентификатор встречи и идентификаторы участников по порядку.
 async fn seed_dacha(conn: &mut sqlx::PgConnection) -> (Uuid, Vec<Uuid>) {
@@ -152,6 +165,160 @@ async fn meeting_view_reports_computed_money() {
     assert_eq!(view.settlement[0].from_id, people[2]);
     assert_eq!(view.settlement[0].to_id, people[1]);
     assert_eq!(view.settlement[0].amount_rubles, 3425);
+}
+
+#[tokio::test]
+async fn patch_changes_only_the_given_fields() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, _) = seed_dacha(&mut tx).await;
+
+    let view = meetings::update_meeting(
+        &mut tx,
+        meeting_id,
+        meetings::UpdateMeeting {
+            title: None,
+            description: Some("Новое описание".to_owned()),
+            emoji: None,
+            held_on: None,
+        },
+    )
+    .await
+    .expect("правка встречи");
+
+    assert_eq!(view.title, "Дача у Влада");
+    assert_eq!(view.description, "Новое описание");
+    assert_eq!(view.emoji, "🏡");
+    assert_eq!(view.log[0].text, "Встреча отредактирована");
+}
+
+#[tokio::test]
+async fn patch_can_clear_the_description() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, _) = seed_dacha(&mut tx).await;
+
+    // Пустая строка — это значение, а не «не менять»: `coalesce` в запросе
+    // отличает NULL от пустой строки, и описание можно убрать.
+    let view = meetings::update_meeting(
+        &mut tx,
+        meeting_id,
+        meetings::UpdateMeeting {
+            title: None,
+            description: Some(String::new()),
+            emoji: None,
+            held_on: None,
+        },
+    )
+    .await
+    .expect("правка встречи");
+
+    assert_eq!(view.description, "");
+}
+
+#[tokio::test]
+async fn blank_title_in_patch_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, _) = seed_dacha(&mut tx).await;
+
+    // На создании пустое название допустимо — там формы может не быть вовсе.
+    // На правке пользователь смотрит в это поле, и молча подставить
+    // «Новая встреча» вместо его текста значило бы соврать.
+    let error = meetings::update_meeting(
+        &mut tx,
+        meeting_id,
+        meetings::UpdateMeeting {
+            title: Some("  ".to_owned()),
+            description: None,
+            emoji: None,
+            held_on: None,
+        },
+    )
+    .await
+    .expect_err("пустое название");
+
+    assert_eq!(validation_field(&error), "title");
+}
+
+#[tokio::test]
+async fn patch_of_missing_meeting_is_not_found() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let error = meetings::update_meeting(
+        &mut tx,
+        Uuid::nil(),
+        meetings::UpdateMeeting {
+            title: Some("Что-нибудь".to_owned()),
+            description: None,
+            emoji: None,
+            held_on: None,
+        },
+    )
+    .await
+    .expect_err("несуществующая встреча");
+
+    assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
+}
+
+#[tokio::test]
+async fn delete_takes_the_meeting_and_everything_under_it() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    db::entries::insert(
+        &mut tx,
+        meeting_id,
+        db::entries::NewEntry {
+            kind: db::records::EntryKindRow::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 500,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("вставка расхода");
+
+    meetings::delete_meeting(&mut tx, meeting_id)
+        .await
+        .expect("удаление встречи");
+
+    let entries: i64 = sqlx::query_scalar("select count(*) from entries where meeting_id = $1")
+        .bind(meeting_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("подсчёт записей");
+    let participants: i64 =
+        sqlx::query_scalar("select count(*) from participants where meeting_id = $1")
+            .bind(meeting_id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("подсчёт участников");
+
+    assert_eq!(entries, 0);
+    assert_eq!(participants, 0);
+    assert!(
+        db::meetings::find(&mut tx, meeting_id)
+            .await
+            .expect("чтение встречи")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn delete_of_missing_meeting_is_not_found() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let error = meetings::delete_meeting(&mut tx, Uuid::nil())
+        .await
+        .expect_err("несуществующая встреча");
+
+    assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
 }
 
 #[tokio::test]
