@@ -10,7 +10,7 @@ pub mod types;
 #[cfg(test)]
 pub mod testing;
 
-pub use balance::contributions;
+pub use balance::{contributions, net_balances};
 pub use shares::expense_shares;
 pub use types::{
     Entry, EntryKind, FULL_QUARTERS, MeetingFacts, Participant, ParticipantId, Weight,
