@@ -6,7 +6,7 @@
 
 **Architecture:** Слой `db` содержит только запросы и отображение строк в доменные типы — ни валидации, ни HTTP, ни бизнес-правил. Функции принимают `&mut PgConnection`, поэтому вызывающий сам решает, нужна ли транзакция, а тесты оборачивают каждый случай в транзакцию с откатом и не оставляют мусора. Домен из плана 1 не меняется ни на строку: если ему чего-то не хватает, это повод вернуться к спеке, а не дописать логику здесь.
 
-**Tech Stack:** Rust 1.97 (edition 2024), sqlx 0.8 с Postgres и rustls, Neon Postgres, chrono, dotenvy, uuid.
+**Tech Stack:** Rust 1.97 (edition 2024), sqlx 0.9 с Postgres и rustls, Neon Postgres (18.4), chrono, dotenvy, uuid.
 
 ---
 
@@ -39,14 +39,31 @@ exists`. Пулер нужен при тысячах короткоживущи�
 базы будет падать на забытом `cargo sqlx prepare`. Взамен каждый запрос закрывается интеграционным
 тестом; именно там опечатка в SQL и всплывает.
 
+**Запросы пишутся строковыми литералами целиком, без `format!`.** В sqlx 0.9 `query`/`query_as`
+принимают `impl SqlSafeStr`, а он реализован только для `&'static str` — склеить запрос в рантайме
+без явной обёртки `AssertSqlSafe` нельзя. Обёртка существует, и наш случай (подстановка
+compile-time константы со списком колонок) был бы безобиден, но применять её здесь не будем: приём,
+появившийся в первом же запросе, повторится во всех следующих, а в Task 13 строится запрос
+с фильтрами и сортировкой — ровно то место, куда потом просачивается пользовательский ввод. Лучше
+заплатить дублированием списка колонок и оставить каждый запрос читаемым как литерал.
+
+Практически это значит: там, где в блоках кода ниже стоит `sqlx::query_as(&format!("… {COLUMNS} …"))`,
+надо писать литерал с выписанными колонками. Динамические части (сортировка в Task 13) собираются
+не склейкой, а `match` по перечислению, каждая ветка которого возвращает свой литерал.
+
 **Функции принимают `&mut PgConnection`.** Не `&PgPool`. Так вызывающий решает, нужна ли транзакция,
 а тест оборачивает случай в транзакцию и откатывает её — изоляция без очистки. Где нужна атомарность
 из нескольких запросов (запись расхода вместе с долями и строкой лога), вызывающий открывает
 транзакцию и передаёт `&mut *tx`.
 
-**`position` присваивается как число уже существующих участников.** Поэтому удаления оставляют дырки
-в нумерации — это нормально. Уникальность `(meeting_id, position)` от этого не страдает, а тай-брейк
-при раздаче остатка рублей остаётся однозначным.
+**`position` присваивается как `max(position) + 1` по встрече.** Не как число уже существующих
+участников — это была ошибка в первой редакции плана, и она ломала бы приложение. Счётчик по
+количеству после удаления кого-то из середины выдаёт уже занятый номер: двое получили 0 и 1,
+первого удалили, `count(*)` стал 1, и следующий участник претендует на позицию 1, которая занята.
+Проверено на живой базе — Postgres отвечает `duplicate key value violates unique constraint
+"participants_meeting_id_position_key"`, то есть добавление участника падало бы после любого
+удаления. Монотонный счётчик оставляет дырки в нумерации; они безобидны, потому что важен только
+порядок, а не плотность, и тай-брейк при раздаче остатка рублей остаётся однозначным.
 
 ## Структура файлов
 
@@ -82,13 +99,13 @@ backend/tests/
 - Create: `backend/src/db/mod.rs`
 - Modify: `backend/src/lib.rs`
 
-- [ ] **Step 1: Закрыть `.env` от git прежде, чем он появится**
+- [x] **Step 1: Закрыть `.env` от git прежде, чем он появится**
 
-Дописать в `.gitignore` (в корне репозитория):
-
-```
-backend/.env
-```
+Выполнено в коммите `cca614e`, причём шире, чем здесь было написано. Вместо строки `backend/.env`
+в `.gitignore` добавлен шаблон `.env` без ведущей косой черты — он закрывает файлы с таким именем
+на любой глубине, а не только в одном каталоге. Рядом появился коммитируемый
+`backend/.env.example`: он документирует, какие переменные нужны и какие у строк требования, чтобы
+это не приходилось выяснять из кода.
 
 Порядок важен: строка подключения к базе не должна попасть в историю даже одним коммитом.
 
@@ -299,6 +316,13 @@ Run: `cd backend && cargo test --lib db`
 Ожидается: `test result: ok. 1 passed`. Если `migrate!` не находит каталог — путь указан
 относительно `backend/`, проверьте, что файл лежит в `backend/migrations/`.
 
+Компиляции недостаточно: она проверяет, что каталог найден, но не что SQL валиден. Опечатка в
+миграции всплыла бы только на Task 3, когда её начнёт применять тестовый каркас. Поэтому миграция
+дополнительно применена живьём к бранчам `dev` и `test` одноразовым тестом (удалён после прогона):
+в обоих создались `meetings`, `participants`, `entries`, `entry_shares`, `meeting_log` и служебная
+`_sqlx_migrations`. Повторный запуск прошёл без ошибок — идемпотентность подтверждена, значит
+применять миграции при каждом старте сервера безопасно.
+
 - [ ] **Step 4: Закоммитить**
 
 ```bash
@@ -333,10 +357,15 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 /// Паникует, если переменная не задана. Тихо проходить такой тест не должен —
 /// зелёный прогон без базы создаёт ложное чувство покрытия.
 pub async fn test_pool() -> PgPool {
+    // `cargo test` не читает `.env` сам, в отличие от бинарника, который делает
+    // это в `main`. Без этой строки переменная не найдётся, даже если она в файле.
+    // Уже заданные в окружении значения `dotenvy` не перетирает.
+    dotenvy::dotenv().ok();
+
     let url = std::env::var("TEST_DATABASE_URL").expect(
         "TEST_DATABASE_URL не задана. Интеграционные тесты требуют бранч `test` в Neon; \
-         строка подключения кладётся в backend/.env. В CI эти тесты не запускаются: \
-         там идёт только `cargo test --lib`.",
+         строка подключения кладётся в backend/.env (см. docs/setup-neon.md). \
+         В CI эти тесты не запускаются: там идёт только `cargo test --lib`.",
     );
 
     let pool = PgPoolOptions::new()
@@ -404,14 +433,21 @@ Run: `cd backend && cargo test --test persistence`
 
 - [ ] **Step 4: Убедиться, что без переменной тест падает понятно**
 
+Снять переменную из окружения недостаточно: `dotenvy` подставит её из `backend/.env`, и тест пройдёт.
+Чтобы проверить сообщение, файл надо на время убрать — с гарантированным возвратом, иначе одна
+неудачная команда оставит разработчика без строк подключения.
+
 Run (PowerShell):
 
 ```
-cd backend; $saved = $env:TEST_DATABASE_URL; $env:TEST_DATABASE_URL = $null; cargo test --test persistence 2>&1 | Select-String "TEST_DATABASE_URL"; $env:TEST_DATABASE_URL = $saved
+$envPath = "D:\rust-projects\reckoner\backend\.env"; $bak = "$envPath.verify-bak"; Set-Location D:\rust-projects\reckoner\backend; try { Rename-Item $envPath $bak -ErrorAction Stop; if (Test-Path Env:\TEST_DATABASE_URL) { Remove-Item Env:\TEST_DATABASE_URL }; cargo test --test persistence 2>&1 | Select-String "TEST_DATABASE_URL|panicked" } finally { if (Test-Path $bak) { Rename-Item $bak $envPath } }; "env на месте: " + (Test-Path $envPath)
 ```
 
-Ожидается: в выводе текст про то, что переменная не задана и где взять строку подключения. Это
-проверка сообщения, а не поведения: его будет читать человек, у которого тесты не идут.
+Ожидается: в выводе текст про то, что переменная не задана и где взять строку подключения, затем
+`env на месте: True`. Это проверка сообщения, а не поведения: его будет читать человек, у которого
+тесты не идут. Ненулевой код возврата здесь нормален — тест обязан упасть.
+
+После проверки прогнать тест ещё раз и убедиться, что он снова зелёный.
 
 - [ ] **Step 5: Закоммитить**
 
@@ -507,10 +543,16 @@ pub struct LogRow {
 pub mod records;
 ```
 
-**Если `sqlx::Type` на `EntryKindRow` не соберётся.** Отображение unit-перечисления на колонку
-`text` — единственное место в плане, где я не уверен в точной форме атрибута для sqlx 0.8. Если
-компилятор ругается на `type_name = "text"`, не изобретайте: замените derive на явное
-преобразование, оно работает всегда.
+**Результат: derive сработал.** На sqlx 0.9 форма `#[sqlx(type_name = "text", rename_all =
+"lowercase")]` компилируется, и — что важнее — правильно ходит в Postgres и обратно. Компиляция
+здесь ничего не доказывала бы сама по себе, поэтому в `tests/persistence.rs` добавлен постоянный
+тест `entry_kind_round_trips_through_a_text_column`: он проверяет, что `Expense` кодируется ровно
+в `expense`, а `transfer` раскодируется обратно. Тест не про sqlx, а про то, что значения
+перечисления совпадают со строками в CHECK-констрейнте схемы: разойдись они — вставка записи упала
+бы в рантайме, а не при сборке. Запасной вариант ниже не понадобился; он оставлен как справка.
+
+**Если `sqlx::Type` на `EntryKindRow` не соберётся** (например, на другой версии sqlx), не
+изобретайте: замените derive на явное преобразование, оно работает всегда.
 
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -646,19 +688,23 @@ pub struct NewMeeting {
     pub held_on: NaiveDate,
 }
 
-/// Колонки, возвращаемые всеми запросами к `meetings`. Байты обложки не
-/// читаются: они не нужны ни списку, ни странице встречи.
-const COLUMNS: &str = "id, title, description, emoji, held_on, cover_mime, \
-                       cover_version, created_at, updated_at";
+// Список колонок выписан в каждом запросе, а не собран через `format!` из общей
+// константы: в sqlx 0.9 запрос обязан быть `&'static str`, иначе нужна обёртка
+// `AssertSqlSafe`. Обёртку не используем сознательно — она снимает защиту от
+// склейки запросов там, где позже появятся фильтры с пользовательским вводом.
+// Байты обложки не читаются ни одним из запросов: они не нужны ни списку,
+// ни странице встречи, и возить их в каждом ответе значило бы тратить трафик.
 
 pub async fn insert(
     conn: &mut PgConnection,
     meeting: NewMeeting,
 ) -> Result<MeetingRow, sqlx::Error> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(
         "insert into meetings (title, description, emoji, held_on) \
-         values ($1, $2, $3, $4) returning {COLUMNS}"
-    ))
+         values ($1, $2, $3, $4) \
+         returning id, title, description, emoji, held_on, cover_mime, \
+                   cover_version, created_at, updated_at",
+    )
     .bind(meeting.title)
     .bind(meeting.description)
     .bind(meeting.emoji)
@@ -667,14 +713,15 @@ pub async fn insert(
     .await
 }
 
-pub async fn find(
-    conn: &mut PgConnection,
-    id: Uuid,
-) -> Result<Option<MeetingRow>, sqlx::Error> {
-    sqlx::query_as(&format!("select {COLUMNS} from meetings where id = $1"))
-        .bind(id)
-        .fetch_optional(conn)
-        .await
+pub async fn find(conn: &mut PgConnection, id: Uuid) -> Result<Option<MeetingRow>, sqlx::Error> {
+    sqlx::query_as(
+        "select id, title, description, emoji, held_on, cover_mime, \
+                cover_version, created_at, updated_at \
+         from meetings where id = $1",
+    )
+    .bind(id)
+    .fetch_optional(conn)
+    .await
 }
 ```
 
@@ -811,15 +858,17 @@ pub async fn update(
     id: Uuid,
     patch: MeetingPatch,
 ) -> Result<Option<MeetingRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(
         "update meetings set \
              title = coalesce($2, title), \
              description = coalesce($3, description), \
              emoji = coalesce($4, emoji), \
              held_on = coalesce($5, held_on), \
              updated_at = now() \
-         where id = $1 returning {COLUMNS}"
-    ))
+         where id = $1 \
+         returning id, title, description, emoji, held_on, cover_mime, \
+                   cover_version, created_at, updated_at",
+    )
     .bind(id)
     .bind(patch.title)
     .bind(patch.description)
@@ -971,17 +1020,31 @@ async fn position_keeps_growing_after_a_deletion() {
     participants::insert(&mut tx, meeting_id, "Два", "🦊")
         .await
         .expect("второй");
-    participants::delete(&mut tx, first.id).await.expect("удаление");
+    participants::delete(&mut tx, first.id)
+        .await
+        .expect("удаление");
 
-    // Позиция считается как число уже существующих участников, поэтому после
-    // удаления остаётся один — и новый получает position 1, а не 2. С уникальным
-    // индексом (meeting_id, position) это не конфликтует: позиция 1 свободна.
+    // Номер берётся как max(position) + 1, поэтому третий получает 2, а не 1.
+    // Счётчик по числу существующих участников выдал бы здесь 1 — уже занятый
+    // «Два» номер — и вставка упала бы на уникальном индексе. Дырка на месте
+    // удалённого остаётся навсегда, и это правильно.
     let third = participants::insert(&mut tx, meeting_id, "Три", "🐸")
         .await
         .expect("третий");
-    assert_eq!(third.position, 1);
+    assert_eq!(third.position, 2);
+
+    let positions: Vec<i32> = participants::list_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("список")
+        .iter()
+        .map(|row| row.position)
+        .collect();
+    assert_eq!(positions, [1, 2]);
 }
 ```
+
+Тест назван `position_never_reuses_a_number_after_a_deletion`: он про то, что номер не переиспользуется,
+а не про то, что нумерация плотная.
 
 - [ ] **Step 2: Запустить и убедиться, что не компилируется**
 
@@ -999,42 +1062,54 @@ use uuid::Uuid;
 
 use super::records::ParticipantRow;
 
-/// Размер палитры аватаров из дизайна. Цвет не хранится, хранится индекс.
+/// Размер палитры аватаров из дизайна. Цвет не хранится, хранится индекс:
+/// сами цвета знает фронтенд. Передаётся в запрос параметром, а не подставляется
+/// в текст, чтобы значение осталось единственным.
 const PALETTE_SIZE: i64 = 8;
 
-const COLUMNS: &str =
-    "id, meeting_id, name, emoji, color_index, position, created_at";
-
 /// `position` и `color_index` присваивает база, а не вызывающий: они зависят от
-/// того, сколько участников уже есть, и считать это на стороне приложения
-/// значило бы гонку между двумя одновременными добавлениями.
+/// того, что уже есть в таблице, и считать это на стороне приложения значило бы
+/// гонку между двумя одновременными добавлениями.
+///
+/// Номер берётся как `max(position) + 1`, а не как число существующих
+/// участников. Разница принципиальная: после удаления кого-то из середины
+/// счётчик по количеству выдал бы уже занятый номер и упёрся в уникальный
+/// индекс `(meeting_id, position)`. Монотонный счётчик оставляет дырки
+/// в нумерации — это безобидно, а вот столкновение сломало бы добавление
+/// участника после любого удаления.
 pub async fn insert(
     conn: &mut PgConnection,
     meeting_id: Uuid,
     name: &str,
     emoji: &str,
 ) -> Result<ParticipantRow, sqlx::Error> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(
         "insert into participants (meeting_id, name, emoji, color_index, position) \
-         select $1, $2, $3, count(*) % {PALETTE_SIZE}, count(*) \
-         from participants where meeting_id = $1 \
-         returning {COLUMNS}"
-    ))
+         select $1, $2, $3, (next.value % $4)::smallint, next.value::int \
+         from ( \
+             select coalesce(max(position), -1) + 1 as value \
+             from participants where meeting_id = $1 \
+         ) as next \
+         returning id, meeting_id, name, emoji, color_index, position, created_at",
+    )
     .bind(meeting_id)
     .bind(name)
     .bind(emoji)
+    .bind(PALETTE_SIZE)
     .fetch_one(conn)
     .await
 }
 
-/// Порядок по `position` — тот же, что использует домен для тай-брейка.
+/// Порядок по `position` — тот же, что использует домен для тай-брейка при
+/// раздаче остатка рублей.
 pub async fn list_for_meeting(
     conn: &mut PgConnection,
     meeting_id: Uuid,
 ) -> Result<Vec<ParticipantRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
-        "select {COLUMNS} from participants where meeting_id = $1 order by position"
-    ))
+    sqlx::query_as(
+        "select id, meeting_id, name, emoji, color_index, position, created_at \
+         from participants where meeting_id = $1 order by position",
+    )
     .bind(meeting_id)
     .fetch_all(conn)
     .await
@@ -1048,9 +1123,10 @@ pub async fn update(
     name: &str,
     emoji: &str,
 ) -> Result<Option<ParticipantRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
-        "update participants set name = $2, emoji = $3 where id = $1 returning {COLUMNS}"
-    ))
+    sqlx::query_as(
+        "update participants set name = $2, emoji = $3 where id = $1 \
+         returning id, meeting_id, name, emoji, color_index, position, created_at",
+    )
     .bind(id)
     .bind(name)
     .bind(emoji)
@@ -1146,9 +1222,16 @@ async fn stores_an_expense_with_partial_shares() {
     assert_eq!(shares[0].participant_id, other.id);
     assert_eq!(shares[0].weight_quarters, 2);
 }
+```
 
+Тест на перевод разделён на два. Проверка перевода самому себе живёт в **отдельной** транзакции:
+нарушение CHECK переводит транзакцию Postgres в сбойное состояние, и любой следующий запрос в ней
+тоже упал бы. Держать обе проверки в одной транзакции можно, только если отбитая идёт последней, —
+а это скрытая зависимость от порядка, которая ломается при добавлении ещё одной проверки.
+
+```rust
 #[tokio::test]
-async fn stores_a_transfer_and_rejects_a_self_transfer() {
+async fn stores_a_transfer() {
     let pool = test_pool().await;
     let mut tx = pool.begin().await.expect("транзакция");
     let meeting_id = seed_meeting(&mut tx).await;
@@ -1177,16 +1260,30 @@ async fn stores_a_transfer_and_rejects_a_self_transfer() {
     .expect("вставка перевода");
 
     assert_eq!(transfer.recipient_id, Some(to.id));
+    assert_eq!(transfer.kind, EntryKindRow::Transfer);
+}
 
-    // Перевод самому себе отбивает CHECK в схеме. Слой API проверит это раньше
-    // и вернёт 422, но защита в базе — последняя линия, и она должна работать.
+#[tokio::test]
+async fn rejects_a_self_transfer() {
+    let pool = test_pool().await;
+    // Отдельная транзакция: нарушение CHECK переводит транзакцию Postgres
+    // в сбойное состояние, и все последующие запросы в ней тоже упали бы.
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let person = participants::insert(&mut tx, meeting_id, "Егор", "🐸")
+        .await
+        .expect("участник");
+
+    // Слой API проверит это раньше и вернёт 422, но защита в базе — последняя
+    // линия, и она должна работать.
     let rejected = entries::insert(
         &mut tx,
         meeting_id,
         NewEntry {
             kind: EntryKindRow::Transfer,
-            payer_id: from.id,
-            recipient_id: Some(from.id),
+            payer_id: person.id,
+            recipient_id: Some(person.id),
             amount_rubles: 100,
             description: String::new(),
             occurred_at: None,
@@ -1331,9 +1428,6 @@ pub struct NewEntry {
     pub shares: Vec<(Uuid, i16)>,
 }
 
-const COLUMNS: &str = "id, meeting_id, kind, payer_id, recipient_id, \
-                       amount_rubles, description, occurred_at, created_at";
-
 /// Вставляет запись и её доли. Вызывающий обязан передать транзакцию: запись
 /// без своих долей — это неверный расчёт, а не просто неполные данные.
 pub async fn insert(
@@ -1341,12 +1435,13 @@ pub async fn insert(
     meeting_id: Uuid,
     entry: NewEntry,
 ) -> Result<EntryRow, sqlx::Error> {
-    let row: EntryRow = sqlx::query_as(&format!(
+    let row: EntryRow = sqlx::query_as(
         "insert into entries \
              (meeting_id, kind, payer_id, recipient_id, amount_rubles, description, occurred_at) \
          values ($1, $2, $3, $4, $5, $6, coalesce($7, now())) \
-         returning {COLUMNS}"
-    ))
+         returning id, meeting_id, kind, payer_id, recipient_id, \
+                   amount_rubles, description, occurred_at, created_at",
+    )
     .bind(meeting_id)
     .bind(entry.kind)
     .bind(entry.payer_id)
@@ -1373,14 +1468,20 @@ pub async fn insert(
 }
 
 /// Новые сверху — так история показана в интерфейсе.
+///
+/// Второй ключ сортировки не украшение: две записи с одинаковым `occurred_at`
+/// без него шли бы в произвольном порядке, и один и тот же запрос мог бы
+/// вернуть историю в разном виде.
 pub async fn list_for_meeting(
     conn: &mut PgConnection,
     meeting_id: Uuid,
 ) -> Result<Vec<EntryRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
-        "select {COLUMNS} from entries where meeting_id = $1 \
-         order by occurred_at desc, id"
-    ))
+    sqlx::query_as(
+        "select id, meeting_id, kind, payer_id, recipient_id, \
+                amount_rubles, description, occurred_at, created_at \
+         from entries where meeting_id = $1 \
+         order by occurred_at desc, id",
+    )
     .bind(meeting_id)
     .fetch_all(conn)
     .await
@@ -1418,15 +1519,11 @@ pub async fn delete(conn: &mut PgConnection, id: Uuid) -> Result<bool, sqlx::Err
 pub mod entries;
 ```
 
-Обратите внимание на `order by occurred_at desc, id`. Второй ключ не украшение: две записи,
-созданные в одну и ту же миллисекунду, без него шли бы в произвольном порядке, и один и тот же
-запрос мог бы вернуть историю в разном виде.
-
 - [ ] **Step 4: Прогнать тесты**
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 13 passed; 0 failed`.
+Ожидается: `test result: ok. 15 passed; 0 failed`.
 
 - [ ] **Step 5: Закоммитить**
 
@@ -1465,9 +1562,12 @@ async fn keeps_the_newest_log_records_within_the_limit() {
 
     let recent = log::recent(&mut tx, meeting_id, 3).await.expect("лог");
 
-    // Новые сверху, лишние отброшены.
+    // Новые сверху, лишние отброшены. Все пять событий получили одинаковый
+    // created_at — now() даёт время начала транзакции, — поэтому порядок здесь
+    // держится целиком на тай-брейке по id.
     assert_eq!(recent.len(), 3);
     assert_eq!(recent[0].text, "событие 4");
+    assert_eq!(recent[1].text, "событие 3");
     assert_eq!(recent[2].text, "событие 2");
 }
 ```
@@ -1533,7 +1633,7 @@ pub mod log;
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 14 passed; 0 failed`.
+Ожидается: `test result: ok. 16 passed; 0 failed`.
 
 - [ ] **Step 5: Закоммитить**
 
@@ -1737,9 +1837,12 @@ fn build(
             .or_default()
             .push(Weight {
                 participant_id: ParticipantId(share.participant_id),
-                // В базе диапазон 0..=3 задан CHECK, поэтому приведение
-                // к u8 не может потерять данные.
-                quarters: share.weight_quarters as u8,
+                // Диапазон 0..=3 задан CHECK в схеме, поэтому преобразование
+                // не может не сойтись. Берём `try_from`, а не `as`: если схема
+                // и код однажды разойдутся, лучше упасть здесь, чем молча
+                // завернуть значение и испортить расчёт долей.
+                quarters: u8::try_from(share.weight_quarters)
+                    .expect("weight_quarters вне диапазона 0..=3 — схема и код разошлись"),
             });
     }
 
@@ -1774,7 +1877,7 @@ pub mod facts;
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 16 passed; 0 failed`.
+Ожидается: `test result: ok. 18 passed; 0 failed`.
 
 Если тест про доли упал — не правьте ожидания, пока не пересчитаете руками. Веса 4, 2, 0 дают сумму
 6; целые части `100×4/6 = 66` (остаток 4) и `100×2/6 = 33` (остаток 2); распределено 99; рубль
@@ -1809,11 +1912,11 @@ async fn main() {
     // `.env` нужен только локально; на Render переменные задаются в панели.
     let _ = dotenvy::dotenv();
 
-    let url = backend::db::database_url().expect("конфигурация базы");
-    let pool = backend::db::connect(&url).await.expect("подключение к базе");
-    backend::db::run_migrations(&pool)
-        .await
-        .expect("миграции");
+    // Падаем на старте, а не отвечаем 500 на каждый запрос: сервер без базы
+    // бесполезен, и лучше это увидеть сразу в логе.
+    let url = or_exit(backend::db::database_url());
+    let pool = or_exit(backend::db::connect(&url).await);
+    or_exit(backend::db::run_migrations(&pool).await);
 
     let cors = CorsLayer::new().allow_origin(Any);
 
@@ -1824,8 +1927,28 @@ async fn main() {
     // ... остальное без изменений
 ```
 
+Обработку ошибок нельзя делать через `expect`, хотя так короче. `expect` печатает ошибку через
+`Debug`, и человек увидел бы `MissingEnv("DATABASE_URL")` вместо написанного для него текста —
+то есть все сообщения `StartupError` оказались бы бесполезны ровно там, где их читают. Проверено:
+с `expect` вывод был `конфигурация базы: MissingEnv("DATABASE_URL")`. Поэтому рядом с `main`:
+
+```rust
+/// Печатает причину и выходит с ненулевым кодом.
+fn or_exit<T>(result: Result<T, backend::db::StartupError>) -> T {
+    match result {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("не удалось запустить сервер: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+```
+
 Заглушка `/api/ws` удаляется вместе с обработчиками `ws_handler` и `handle_socket`: по спеке
-realtime не делаем, а мёртвый эндпоинт вводит в заблуждение. Импорты `extract::ws::*` тоже уходят.
+realtime не делаем, а мёртвый эндпоинт вводит в заблуждение. Импорты `extract::ws::*` тоже уходят,
+и вместе с ними — фича `ws` у axum в `Cargo.toml`: оставленная, она тянула бы в сборку
+`tokio-tungstenite` ради того, чего в приложении нет.
 
 Хендлер `health` теперь получает состояние, но пула не использует — сигнатуру не меняем.
 
@@ -2051,9 +2174,10 @@ Run: `cd backend && cargo test --test persistence`
 /// Частичная правка записи. `None` в поле означает «не менять».
 ///
 /// `kind` менять нельзя: превращение расхода в перевод — это другая запись,
-/// и в интерфейсе это делается удалением и повторным вводом. Согласованность
-/// `kind` и `recipient_id` при правке получателя обеспечивает слой API, а
-/// последней линией — CHECK в схеме.
+/// и в интерфейсе это делается удалением и повторным вводом. Отсюда же следует,
+/// что получателя нельзя обнулить: у перевода он есть всегда, у расхода его нет
+/// никогда, и раз вид записи неизменен, случая «убрать получателя» не бывает.
+/// Согласованность обеспечивает слой API, а последней линией — CHECK в схеме.
 #[derive(Debug, Clone, Default)]
 pub struct EntryPatch {
     pub payer_id: Option<Uuid>,
@@ -2072,15 +2196,17 @@ pub async fn update(
     id: Uuid,
     patch: EntryPatch,
 ) -> Result<Option<EntryRow>, sqlx::Error> {
-    let row: Option<EntryRow> = sqlx::query_as(&format!(
+    let row: Option<EntryRow> = sqlx::query_as(
         "update entries set \
              payer_id = coalesce($2, payer_id), \
              recipient_id = coalesce($3, recipient_id), \
              amount_rubles = coalesce($4, amount_rubles), \
              description = coalesce($5, description), \
              occurred_at = coalesce($6, occurred_at) \
-         where id = $1 returning {COLUMNS}"
-    ))
+         where id = $1 \
+         returning id, meeting_id, kind, payer_id, recipient_id, \
+                   amount_rubles, description, occurred_at, created_at",
+    )
     .bind(id)
     .bind(patch.payer_id)
     .bind(patch.recipient_id)
@@ -2125,7 +2251,7 @@ pub async fn update(
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 19 passed; 0 failed`.
+Ожидается: `test result: ok. 21 passed; 0 failed`.
 
 - [ ] **Step 5: Закоммитить**
 
@@ -2236,23 +2362,36 @@ Run: `cd backend && cargo test --test persistence`
 /// сверху; остальные три режима сортировки применяет слой API, потому что
 /// `total-desc` и `open-first` зависят от посчитанных значений.
 ///
+/// Поиск сделан через `position`, а не через `ilike '%' || $1 || '%'`. Причина
+/// не в безопасности — параметр привязан в обоих случаях, — а в том, что у
+/// `like` есть своя семантика шаблонов: введённый пользователем `%` стал бы
+/// подстановочным символом и такой поиск возвращал бы вообще все встречи.
+/// Спека просит поиск по подстроке, и `position` выражает ровно это, не требуя
+/// экранировать `%`, `_` и обратный слэш.
+///
 /// Приведение `$1::text` обязательно: без него Postgres не может определить
 /// тип параметра, когда тот равен NULL.
+///
+/// Третий ключ сортировки `m.id` — та же причина, что и в остальных запросах:
+/// две встречи с одинаковой датой и одинаковым `created_at` без него шли бы
+/// в произвольном порядке.
 pub async fn list_filtered(
     conn: &mut PgConnection,
     query: Option<&str>,
     participant: Option<&str>,
 ) -> Result<Vec<MeetingRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
-        "select {COLUMNS} from meetings m \
+    sqlx::query_as(
+        "select id, title, description, emoji, held_on, cover_mime, \
+                cover_version, created_at, updated_at \
+         from meetings m \
          where ($1::text is null \
-                or m.title ilike '%' || $1 || '%' \
-                or m.description ilike '%' || $1 || '%') \
+                or position(lower($1) in lower(m.title)) > 0 \
+                or position(lower($1) in lower(m.description)) > 0) \
            and ($2::text is null or exists ( \
                  select 1 from participants p \
                  where p.meeting_id = m.id and p.name = $2)) \
-         order by m.held_on desc, m.created_at desc, m.id"
-    ))
+         order by m.held_on desc, m.created_at desc, m.id",
+    )
     .bind(query)
     .bind(participant)
     .fetch_all(conn)
@@ -2260,14 +2399,16 @@ pub async fn list_filtered(
 }
 ```
 
-Третий ключ сортировки `m.id` — та же причина, что и в остальных запросах: две встречи с одинаковой
-датой и одинаковым `created_at` без него шли бы в произвольном порядке.
+Первая редакция использовала `ilike '%' || $1 || '%'`, и добавленный тест
+`treats_wildcards_in_the_query_as_plain_text` это поймал: поиск по `%` возвращал все встречи.
+Инъекции здесь не было — параметр привязан, структура запроса не менялась, — но семантика шаблонов
+`like` протекала в пользовательский ввод, а спека просит подстроку.
 
 - [ ] **Step 4: Прогнать тесты**
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 20 passed; 0 failed`.
+Ожидается: `test result: ok. 23 passed; 0 failed`.
 
 - [ ] **Step 5: Проверить линтером и закоммитить**
 
@@ -2282,8 +2423,9 @@ git commit -m "feat(db): filter the meetings list by query and participant"
 
 ## Проверка по завершении плана
 
-- [ ] `cd backend && cargo test --lib` — юнит-тесты домена зелёные (38 штук), база не нужна
-- [ ] `cd backend && cargo test` — плюс 20 интеграционных тестов против бранча `test`
+- [ ] `cd backend && cargo test --lib` — юнит-тесты зелёные (39: 38 доменных плюс один про текст
+      ошибки старта), база не нужна
+- [ ] `cd backend && cargo test` — плюс 23 интеграционных теста против бранча `test`
 - [ ] `cd backend && cargo clippy --all-targets -- -D warnings` — без предупреждений
 - [ ] `cd backend && cargo fmt --check` — без расхождений
 - [ ] `cd backend && cargo run` и `curl http://127.0.0.1:3000/api/health` → `{"status":"ok"}`
