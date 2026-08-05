@@ -6,6 +6,10 @@
 pub mod balance;
 pub mod reckoning;
 pub mod settle;
+
+#[cfg(test)]
+mod properties;
+
 pub mod shares;
 pub mod status;
 pub mod types;
