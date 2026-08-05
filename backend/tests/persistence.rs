@@ -1,6 +1,7 @@
 mod support;
 
 use backend::db::entries::{self, NewEntry};
+use backend::db::log;
 use backend::db::meetings::{self, MeetingPatch, NewMeeting};
 use backend::db::participants;
 use backend::db::records::EntryKindRow;
@@ -508,4 +509,27 @@ async fn lists_entries_newest_first() {
     // История в интерфейсе идёт новыми сверху.
     assert_eq!(listed[0].amount_rubles, 200);
     assert_eq!(listed[1].amount_rubles, 100);
+}
+
+#[tokio::test]
+async fn keeps_the_newest_log_records_within_the_limit() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    for index in 0..5 {
+        log::append(&mut tx, meeting_id, &format!("событие {index}"))
+            .await
+            .expect("запись в лог");
+    }
+
+    let recent = log::recent(&mut tx, meeting_id, 3).await.expect("лог");
+
+    // Новые сверху, лишние отброшены. Все пять событий получили одинаковый
+    // created_at — now() даёт время начала транзакции, — поэтому порядок здесь
+    // держится целиком на тай-брейке по id.
+    assert_eq!(recent.len(), 3);
+    assert_eq!(recent[0].text, "событие 4");
+    assert_eq!(recent[1].text, "событие 3");
+    assert_eq!(recent[2].text, "событие 2");
 }

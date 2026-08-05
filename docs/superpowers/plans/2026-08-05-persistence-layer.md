@@ -1562,9 +1562,12 @@ async fn keeps_the_newest_log_records_within_the_limit() {
 
     let recent = log::recent(&mut tx, meeting_id, 3).await.expect("лог");
 
-    // Новые сверху, лишние отброшены.
+    // Новые сверху, лишние отброшены. Все пять событий получили одинаковый
+    // created_at — now() даёт время начала транзакции, — поэтому порядок здесь
+    // держится целиком на тай-брейке по id.
     assert_eq!(recent.len(), 3);
     assert_eq!(recent[0].text, "событие 4");
+    assert_eq!(recent[1].text, "событие 3");
     assert_eq!(recent[2].text, "событие 2");
 }
 ```
@@ -1630,7 +1633,7 @@ pub mod log;
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 14 passed; 0 failed`.
+Ожидается: `test result: ok. 16 passed; 0 failed`.
 
 - [ ] **Step 5: Закоммитить**
 

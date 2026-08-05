@@ -5,6 +5,7 @@
 //! транзакция.
 
 pub mod entries;
+pub mod log;
 pub mod meetings;
 pub mod participants;
 pub mod records;
