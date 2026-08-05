@@ -4,6 +4,7 @@
 
 mod support;
 
+use backend::api::entries as api_entries;
 use backend::api::error::ApiError;
 use backend::api::meetings;
 use backend::api::participants;
@@ -585,6 +586,394 @@ async fn deleting_a_participant_of_another_meeting_is_not_found() {
     let error = participants::remove_participant(&mut tx, other_meeting, people[0])
         .await
         .expect_err("чужой участник");
+
+    assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
+}
+
+#[tokio::test]
+async fn expense_is_split_evenly_by_default() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let view = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 400,
+            description: "Продукты".to_owned(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("расход");
+
+    assert_eq!(view.totals.spent_rubles, 400);
+    assert!(view.entries[0].shared_by_all);
+    assert_eq!(view.participants[0].net_rubles, 300);
+    assert_eq!(view.participants[1].net_rubles, -100);
+    assert_eq!(
+        view.log[0].text,
+        "Настя добавляет расход «Продукты» — 400\u{a0}₽"
+    );
+}
+
+#[tokio::test]
+async fn blank_expense_description_gets_the_default_one() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let view = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 400,
+            description: "   ".to_owned(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("расход");
+
+    assert_eq!(view.entries[0].description, "Без описания");
+    assert_eq!(
+        view.log[0].text,
+        "Настя добавляет расход «Без описания» — 400\u{a0}₽"
+    );
+}
+
+#[tokio::test]
+async fn transfer_points_at_its_recipient() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let view = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Transfer,
+            payer_id: people[0],
+            recipient_id: Some(people[1]),
+            amount_rubles: 225,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("перевод");
+
+    // Перевод не увеличивает сумму встречи — он только двигает балансы.
+    assert_eq!(view.totals.spent_rubles, 0);
+    assert_eq!(view.participants[0].net_rubles, 225);
+    assert_eq!(view.participants[1].net_rubles, -225);
+    // «внёс» — только оплаченные расходы, перевод сюда не входит.
+    assert_eq!(view.participants[0].contributed_rubles, 0);
+    assert_eq!(view.log[0].text, "Настя переводит 225\u{a0}₽ → Влад");
+}
+
+#[tokio::test]
+async fn partial_shares_are_stored_without_the_full_ones() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let view = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 100,
+            description: "Пиво".to_owned(),
+            occurred_at: None,
+            shares: vec![
+                // Полная доля не хранится: её отсутствие и есть полная доля.
+                api_entries::ShareInput {
+                    participant_id: people[0],
+                    weight_quarters: 4,
+                },
+                api_entries::ShareInput {
+                    participant_id: people[1],
+                    weight_quarters: 2,
+                },
+                api_entries::ShareInput {
+                    participant_id: people[2],
+                    weight_quarters: 0,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("расход с долями");
+
+    assert!(!view.entries[0].shared_by_all);
+    assert_eq!(view.entries[0].shares.len(), 2);
+    assert!(
+        view.entries[0]
+            .shares
+            .iter()
+            .all(|share| share.participant_id != people[0]),
+        "полная доля не должна попадать в базу"
+    );
+    // Веса 1, ½, 0, 1 на 100 ₽ → 40, 20, 0, 40.
+    assert_eq!(view.participants[2].net_rubles, 0);
+    assert_eq!(view.participants[1].net_rubles, -20);
+}
+
+#[tokio::test]
+async fn zero_amount_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 0,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect_err("нулевая сумма");
+
+    assert_eq!(validation_field(&error), "amountRubles");
+}
+
+#[tokio::test]
+async fn expense_with_a_recipient_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    // CHECK в схеме поймал бы это тоже, но ответом был бы `500`.
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: people[0],
+            recipient_id: Some(people[1]),
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect_err("у расхода нет получателя");
+
+    assert_eq!(validation_field(&error), "recipientId");
+}
+
+#[tokio::test]
+async fn transfer_without_a_recipient_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Transfer,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect_err("перевод без получателя");
+
+    assert_eq!(validation_field(&error), "recipientId");
+}
+
+#[tokio::test]
+async fn transfer_to_self_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Transfer,
+            payer_id: people[0],
+            recipient_id: Some(people[0]),
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect_err("перевод себе");
+
+    assert_eq!(validation_field(&error), "recipientId");
+}
+
+#[tokio::test]
+async fn transfer_with_shares_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    // Перевод не делится: доли у него бессмысленны, и домен их игнорирует.
+    // Принять и выбросить — значит соврать клиенту, что он что-то настроил.
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Transfer,
+            payer_id: people[0],
+            recipient_id: Some(people[1]),
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: vec![api_entries::ShareInput {
+                participant_id: people[2],
+                weight_quarters: 2,
+            }],
+        },
+    )
+    .await
+    .expect_err("доли у перевода");
+
+    assert_eq!(validation_field(&error), "shares");
+}
+
+#[tokio::test]
+async fn payer_from_another_meeting_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, _) = seed_dacha(&mut tx).await;
+    let (_, strangers) = seed_dacha(&mut tx).await;
+
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: strangers[0],
+            recipient_id: None,
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect_err("чужой плательщик");
+
+    assert_eq!(validation_field(&error), "payerId");
+}
+
+#[tokio::test]
+async fn duplicate_share_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    // Первичный ключ `(entry_id, participant_id)` поймал бы это сам, но ответом
+    // был бы `500`, а причина осталась бы в логе сервера.
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: vec![
+                api_entries::ShareInput {
+                    participant_id: people[1],
+                    weight_quarters: 2,
+                },
+                api_entries::ShareInput {
+                    participant_id: people[1],
+                    weight_quarters: 1,
+                },
+            ],
+        },
+    )
+    .await
+    .expect_err("участник дважды в долях");
+
+    assert_eq!(validation_field(&error), "shares");
+}
+
+#[tokio::test]
+async fn share_out_of_range_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: vec![api_entries::ShareInput {
+                participant_id: people[1],
+                weight_quarters: 5,
+            }],
+        },
+    )
+    .await
+    .expect_err("доля больше полной");
+
+    assert_eq!(validation_field(&error), "shares");
+}
+
+#[tokio::test]
+async fn entry_in_a_missing_meeting_is_not_found() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (_, people) = seed_dacha(&mut tx).await;
+
+    let error = api_entries::add_entry(
+        &mut tx,
+        Uuid::nil(),
+        api_entries::CreateEntry {
+            kind: api_entries::EntryKindInput::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect_err("несуществующая встреча");
 
     assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
 }

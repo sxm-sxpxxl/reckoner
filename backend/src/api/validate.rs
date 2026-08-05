@@ -1,10 +1,14 @@
 //! Проверки, общие для нескольких ресурсов. Правило, продублированное
 //! в двух ручках, однажды разойдётся — поэтому оно живёт в одном месте.
 
+use std::collections::BTreeSet;
+
 use uuid::Uuid;
 
 use crate::db::records::ParticipantRow;
+use crate::domain::FULL_QUARTERS;
 
+use super::entries::ShareInput;
 use super::error::ApiError;
 
 /// Имя без пробелов по краям. Пустое имя — ошибка, а не «безымянный участник»:
@@ -52,4 +56,42 @@ pub fn belongs_to_meeting<'a>(
         .iter()
         .find(|row| row.id == id)
         .ok_or_else(|| ApiError::validation(field, "участник не найден в этой встрече"))
+}
+
+/// Доли, приведённые к тому, что хранится в базе. `raw` — как прислал клиент.
+///
+/// Полная доля (4/4) отбрасывается: её отсутствие в таблице и есть полная доля,
+/// а хранить её значило бы держать одно и то же в двух видах.
+pub fn shares(
+    raw: &[ShareInput],
+    participants: &[ParticipantRow],
+) -> Result<Vec<(Uuid, i16)>, ApiError> {
+    let mut seen: BTreeSet<Uuid> = BTreeSet::new();
+    let mut stored = Vec::with_capacity(raw.len());
+
+    for share in raw {
+        if !(0..=FULL_QUARTERS).contains(&i64::from(share.weight_quarters)) {
+            return Err(ApiError::validation(
+                "shares",
+                "доля задаётся четвертями от 0 до 4",
+            ));
+        }
+
+        belongs_to_meeting(participants, share.participant_id, "shares")?;
+
+        if !seen.insert(share.participant_id) {
+            return Err(ApiError::validation(
+                "shares",
+                "участник указан в долях дважды",
+            ));
+        }
+
+        if i64::from(share.weight_quarters) == FULL_QUARTERS {
+            continue;
+        }
+
+        stored.push((share.participant_id, share.weight_quarters));
+    }
+
+    Ok(stored)
 }

@@ -5,6 +5,7 @@
 //! этот слой не меняет. Если ручке не хватает данных — это повод вернуться
 //! к спеке, а не дописать запрос здесь.
 
+pub mod entries;
 pub mod error;
 pub mod meetings;
 pub mod money;
@@ -38,6 +39,7 @@ pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/meetings", post(meetings::create))
+        .route("/api/meetings/:id/entries", post(entries::create))
         .route("/api/meetings/:id/participants", post(participants::create))
         .route(
             "/api/meetings/:id/participants/:pid",
