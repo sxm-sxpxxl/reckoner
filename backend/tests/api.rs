@@ -39,6 +39,64 @@ async fn seed_dacha(conn: &mut sqlx::PgConnection) -> (Uuid, Vec<Uuid>) {
 }
 
 #[tokio::test]
+async fn blank_title_becomes_the_default_one() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    // В дизайне встреча создаётся одной кнопкой, названия может не быть вовсе.
+    let view = meetings::create_meeting(
+        &mut tx,
+        meetings::CreateMeeting {
+            title: "   ".to_owned(),
+            description: String::new(),
+            emoji: None,
+            held_on: None,
+        },
+    )
+    .await
+    .expect("создание встречи");
+
+    assert_eq!(view.title, "Новая встреча");
+    assert_eq!(view.emoji, "✨");
+    assert_eq!(view.held_on, Utc::now().date_naive());
+    // У `MeetingStatusView` нет `Display` — статус сверяется в том виде,
+    // в каком уйдёт клиенту.
+    assert_eq!(
+        serde_json::to_value(&view.status).expect("сериализация"),
+        "no-participants"
+    );
+}
+
+#[tokio::test]
+async fn creation_writes_a_log_line() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let view = meetings::create_meeting(
+        &mut tx,
+        meetings::CreateMeeting {
+            title: "Дача у Влада".to_owned(),
+            description: "Три дня".to_owned(),
+            emoji: Some("🏡".to_owned()),
+            held_on: NaiveDate::from_ymd_opt(2026, 7, 23),
+        },
+    )
+    .await
+    .expect("создание встречи");
+
+    assert_eq!(view.title, "Дача у Влада");
+    assert_eq!(view.emoji, "🏡");
+    assert_eq!(
+        view.held_on,
+        NaiveDate::from_ymd_opt(2026, 7, 23).expect("дата")
+    );
+    // Лог пишется в той же транзакции, что и сама встреча, поэтому он уже виден
+    // в ответе — второго запроса клиенту не нужно.
+    assert_eq!(view.log.len(), 1);
+    assert_eq!(view.log[0].text, "Встреча создана");
+}
+
+#[tokio::test]
 async fn missing_meeting_is_not_found() {
     let pool = test_pool().await;
     let mut tx = pool.begin().await.expect("транзакция");

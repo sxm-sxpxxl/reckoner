@@ -12,7 +12,7 @@ pub mod texts;
 pub mod view;
 
 use axum::extract::{DefaultBodyLimit, FromRequest, Request};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -35,6 +35,7 @@ const LOG_LIMIT: i64 = 12;
 pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
     Router::new()
         .route("/api/health", get(health))
+        .route("/api/meetings", post(meetings::create))
         .route("/api/meetings/:id", get(meetings::show))
         .layer(DefaultBodyLimit::max(JSON_BODY_LIMIT))
         .layer(cors)
