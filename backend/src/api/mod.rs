@@ -38,7 +38,7 @@ const LOG_LIMIT: i64 = 12;
 pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
     Router::new()
         .route("/api/health", get(health))
-        .route("/api/meetings", post(meetings::create))
+        .route("/api/meetings", get(meetings::list).post(meetings::create))
         .route("/api/meetings/:id/entries", post(entries::create))
         .route(
             "/api/meetings/:id/entries/:eid",

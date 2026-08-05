@@ -1204,3 +1204,298 @@ async fn delete_of_an_entry_from_another_meeting_is_not_found() {
 
     assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
 }
+
+/// Уникальная метка в названии: список читает всю таблицу, и тест не должен
+/// зависеть от того, что осталось в бранче `test` от предыдущих прогонов.
+fn marker() -> String {
+    Uuid::new_v4().to_string()
+}
+
+/// Встреча с одной датой, одним расходом и двумя участниками — всё, что нужно
+/// тестам списка.
+async fn seed_card(
+    conn: &mut sqlx::PgConnection,
+    marker: &str,
+    title: &str,
+    held_on: (i32, u32, u32),
+    participant: &str,
+    amount: i64,
+) -> Uuid {
+    let meeting = db::meetings::insert(
+        &mut *conn,
+        NewMeeting {
+            title: format!("{title} {marker}"),
+            description: String::new(),
+            emoji: "✨".to_owned(),
+            held_on: NaiveDate::from_ymd_opt(held_on.0, held_on.1, held_on.2).expect("дата"),
+        },
+    )
+    .await
+    .expect("вставка встречи");
+
+    let person = db::participants::insert(&mut *conn, meeting.id, participant, "🦊")
+        .await
+        .expect("вставка участника");
+    // Второй участник нужен, чтобы расход было между кем делить: на одном
+    // участнике баланс всегда нулевой, и открытую встречу не отличить
+    // от закрытой.
+    let _second = db::participants::insert(&mut *conn, meeting.id, "Второй", "🐸")
+        .await
+        .expect("вставка участника");
+
+    if amount > 0 {
+        db::entries::insert(
+            &mut *conn,
+            meeting.id,
+            db::entries::NewEntry {
+                kind: db::records::EntryKindRow::Expense,
+                payer_id: person.id,
+                recipient_id: None,
+                amount_rubles: amount,
+                description: String::new(),
+                occurred_at: None,
+                shares: Vec::new(),
+            },
+        )
+        .await
+        .expect("вставка расхода");
+    }
+
+    meeting.id
+}
+
+#[tokio::test]
+async fn list_returns_cards_with_computed_totals() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let marker = marker();
+    seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), "Настя", 500).await;
+
+    let cards = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: Some(marker.clone()),
+            participant: None,
+            sort: None,
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    assert_eq!(cards.len(), 1);
+    assert_eq!(cards[0].total_rubles, 500);
+    assert_eq!(cards[0].participants.len(), 2);
+    assert_eq!(cards[0].pending_transfers, 1);
+}
+
+#[tokio::test]
+async fn query_matches_title_and_description() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let marker = marker();
+    let meeting_id = seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), "Настя", 0).await;
+    let unique_word = format!("солёные{marker}");
+    db::meetings::update(
+        &mut tx,
+        meeting_id,
+        db::meetings::MeetingPatch {
+            title: None,
+            description: Some(unique_word.clone()),
+            emoji: None,
+            held_on: None,
+        },
+    )
+    .await
+    .expect("правка встречи");
+
+    // Регистр не важен, и совпадение по описанию считается наравне с названием.
+    let by_description = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: Some(unique_word.to_uppercase()),
+            participant: None,
+            sort: None,
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    assert!(by_description.iter().any(|card| card.id == meeting_id));
+}
+
+#[tokio::test]
+async fn percent_in_query_is_not_a_wildcard() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let marker = marker();
+    seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), "Настя", 0).await;
+
+    // С `like '%' || $1 || '%'` этот поиск вернул бы все встречи вообще.
+    let cards = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: Some("%".to_owned()),
+            participant: None,
+            sort: None,
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    assert!(cards.is_empty(), "получено карточек: {}", cards.len());
+}
+
+#[tokio::test]
+async fn participant_filter_keeps_only_meetings_with_that_name() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let marker = marker();
+    let unique_name = format!("Настя {marker}");
+    let with_her = seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), &unique_name, 0).await;
+    let without_her = seed_card(&mut tx, &marker, "Кино", (2026, 7, 21), "Егор", 0).await;
+
+    let cards = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: None,
+            participant: Some(unique_name),
+            sort: None,
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    let ids: Vec<Uuid> = cards.iter().map(|card| card.id).collect();
+    assert!(ids.contains(&with_her));
+    assert!(!ids.contains(&without_her));
+}
+
+#[tokio::test]
+async fn default_sort_is_newest_meeting_first() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let marker = marker();
+    let older = seed_card(&mut tx, &marker, "Раньше", (2026, 7, 1), "Настя", 0).await;
+    let newer = seed_card(&mut tx, &marker, "Позже", (2026, 7, 30), "Настя", 0).await;
+
+    let cards = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: Some(marker.clone()),
+            participant: None,
+            sort: None,
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    assert_eq!(cards[0].id, newer);
+    assert_eq!(cards[1].id, older);
+
+    let reversed = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: Some(marker),
+            participant: None,
+            sort: Some("date-asc".to_owned()),
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    assert_eq!(reversed[0].id, older);
+    assert_eq!(reversed[1].id, newer);
+}
+
+#[tokio::test]
+async fn total_desc_puts_the_expensive_meeting_first() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let marker = marker();
+    // Дешёвая встреча позже дорогой, поэтому по умолчанию она была бы первой.
+    let cheap = seed_card(&mut tx, &marker, "Дешёвая", (2026, 7, 30), "Настя", 100).await;
+    let costly = seed_card(&mut tx, &marker, "Дорогая", (2026, 7, 1), "Настя", 9000).await;
+
+    let cards = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: Some(marker),
+            participant: None,
+            sort: Some("total-desc".to_owned()),
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    assert_eq!(cards[0].id, costly);
+    assert_eq!(cards[1].id, cheap);
+}
+
+#[tokio::test]
+async fn open_first_puts_the_most_open_meeting_first() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let marker = marker();
+    // Закрытая встреча позже открытой: без сортировки она была бы первой.
+    let settled = seed_card(&mut tx, &marker, "Закрытая", (2026, 7, 30), "Настя", 0).await;
+    let open = seed_card(&mut tx, &marker, "Открытая", (2026, 7, 1), "Настя", 100).await;
+
+    let cards = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: Some(marker),
+            participant: None,
+            sort: Some("open-first".to_owned()),
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    assert_eq!(cards[0].id, open);
+    assert_eq!(cards[0].pending_transfers, 1);
+    assert_eq!(cards[1].id, settled);
+    assert_eq!(cards[1].pending_transfers, 0);
+}
+
+#[tokio::test]
+async fn unknown_sort_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let error = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: None,
+            participant: None,
+            sort: Some("по-настроению".to_owned()),
+        },
+    )
+    .await
+    .expect_err("неизвестная сортировка");
+
+    assert_eq!(validation_field(&error), "sort");
+}
+
+#[tokio::test]
+async fn blank_filters_are_treated_as_absent() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let marker = marker();
+    let meeting_id = seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), "Настя", 0).await;
+
+    // Пустая строка приходит от инпута, который пользователь очистил.
+    // Считать её фильтром «название содержит пустоту» значит вернуть всё,
+    // но по коду это должно быть «фильтра нет», а не «фильтр пустой».
+    let cards = meetings::load_cards(
+        &mut tx,
+        meetings::ListFilters {
+            query: Some("   ".to_owned()),
+            participant: Some(String::new()),
+            sort: Some(String::new()),
+        },
+    )
+    .await
+    .expect("список встреч");
+
+    assert!(cards.iter().any(|card| card.id == meeting_id));
+}

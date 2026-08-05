@@ -1,7 +1,10 @@
 //! Ручки встречи: список, чтение, создание, правка, удаление.
 
+use std::cmp::Reverse;
+use std::collections::HashMap;
+
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chrono::{NaiveDate, Utc};
 use serde::Deserialize;
@@ -15,7 +18,7 @@ use super::JsonBody;
 use super::LOG_LIMIT;
 use super::error::ApiError;
 use super::texts;
-use super::view::{self, MeetingView};
+use super::view::{self, MeetingCard, MeetingView};
 
 /// Встреча целиком: то же тело, что отдаёт любая мутирующая ручка. Пять запросов
 /// одним соединением; если вызвано внутри транзакции — видит её незакоммиченные
@@ -205,4 +208,143 @@ pub async fn destroy(
     delete_meeting(&mut conn, id).await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Параметры списка ровно в том виде, в каком они приходят в query-строке.
+/// Разбор `sort` отложен до валидации: неизвестное значение должно давать `422`
+/// с нашей формой тела, а отказ извлекателя `Query` дал бы текст.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ListFilters {
+    #[serde(rename = "q")]
+    pub query: Option<String>,
+    pub participant: Option<String>,
+    pub sort: Option<String>,
+}
+
+/// Режимы сортировки из спеки. Три из четырёх нельзя выразить в SQL: они
+/// зависят от посчитанных значений, которых в базе нет. Поэтому динамического
+/// `order by` не существует — есть `match` по перечислению.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortMode {
+    #[default]
+    DateDesc,
+    DateAsc,
+    TotalDesc,
+    OpenFirst,
+}
+
+impl SortMode {
+    fn parse(raw: Option<&str>) -> Result<Self, ApiError> {
+        match raw.map(str::trim).filter(|value| !value.is_empty()) {
+            None | Some("date-desc") => Ok(Self::DateDesc),
+            Some("date-asc") => Ok(Self::DateAsc),
+            Some("total-desc") => Ok(Self::TotalDesc),
+            Some("open-first") => Ok(Self::OpenFirst),
+            Some(other) => Err(ApiError::validation(
+                "sort",
+                format!("неизвестный режим сортировки: {other}"),
+            )),
+        }
+    }
+}
+
+/// Список карточек. Четыре запроса независимо от числа встреч: сами встречи,
+/// затем участники, записи и доли — пачкой на все найденные встречи сразу.
+pub async fn load_cards(
+    conn: &mut PgConnection,
+    filters: ListFilters,
+) -> Result<Vec<MeetingCard>, ApiError> {
+    let sort = SortMode::parse(filters.sort.as_deref())?;
+    // Пустая строка приходит от очищенного инпута и означает «фильтра нет».
+    let query = trimmed(filters.query.as_deref());
+    let participant = trimmed(filters.participant.as_deref());
+
+    let meetings =
+        db::meetings::list_filtered(&mut *conn, query.as_deref(), participant.as_deref()).await?;
+    let ids: Vec<Uuid> = meetings.iter().map(|row| row.id).collect();
+
+    let participant_rows = db::participants::list_for_meetings(&mut *conn, &ids).await?;
+    let entry_rows = db::entries::list_for_meetings(&mut *conn, &ids).await?;
+    let share_rows = db::entries::shares_for_meetings(&mut *conn, &ids).await?;
+
+    let mut participants_by_meeting: HashMap<Uuid, Vec<_>> = HashMap::new();
+    for row in participant_rows {
+        participants_by_meeting
+            .entry(row.meeting_id)
+            .or_default()
+            .push(row);
+    }
+
+    let mut entries_by_meeting: HashMap<Uuid, Vec<_>> = HashMap::new();
+    let mut meeting_of_entry: HashMap<Uuid, Uuid> = HashMap::new();
+    for row in entry_rows {
+        meeting_of_entry.insert(row.id, row.meeting_id);
+        entries_by_meeting
+            .entry(row.meeting_id)
+            .or_default()
+            .push(row);
+    }
+
+    let mut shares_by_meeting: HashMap<Uuid, Vec<_>> = HashMap::new();
+    for row in share_rows {
+        // Запись, чьей встречи нет в выдаче, сюда попасть не может: доли
+        // читались тем же фильтром. `if let` — защита от невозможного, а не
+        // ветка логики.
+        if let Some(meeting_id) = meeting_of_entry.get(&row.entry_id) {
+            shares_by_meeting.entry(*meeting_id).or_default().push(row);
+        }
+    }
+
+    let mut cards: Vec<MeetingCard> = meetings
+        .iter()
+        .map(|meeting| {
+            view::meeting_card(
+                meeting,
+                participants_by_meeting
+                    .get(&meeting.id)
+                    .map_or(&[][..], Vec::as_slice),
+                entries_by_meeting
+                    .get(&meeting.id)
+                    .map_or(&[][..], Vec::as_slice),
+                shares_by_meeting
+                    .get(&meeting.id)
+                    .map_or(&[][..], Vec::as_slice),
+            )
+        })
+        .collect();
+
+    sort_cards(&mut cards, sort);
+
+    Ok(cards)
+}
+
+/// Запрос отдаёт встречи в порядке `date-desc`; остальные режимы получаются
+/// из него на месте.
+///
+/// `date-asc` — это ровно обратный порядок: ключ сортировки в запросе
+/// (`held_on`, `created_at`, `id`) задаёт полный порядок, поэтому разворот
+/// однозначен. Два вычисляемых режима применяются устойчивой сортировкой,
+/// то есть при равных суммах встречи остаются в порядке по дате.
+fn sort_cards(cards: &mut [MeetingCard], mode: SortMode) {
+    match mode {
+        SortMode::DateDesc => {}
+        SortMode::DateAsc => cards.reverse(),
+        SortMode::TotalDesc => cards.sort_by_key(|card| Reverse(card.total_rubles)),
+        SortMode::OpenFirst => cards.sort_by_key(|card| Reverse(card.pending_transfers)),
+    }
+}
+
+fn trimmed(raw: Option<&str>) -> Option<String> {
+    raw.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+pub async fn list(
+    State(pool): State<PgPool>,
+    Query(filters): Query<ListFilters>,
+) -> Result<Json<Vec<MeetingCard>>, ApiError> {
+    let mut conn = pool.acquire().await?;
+
+    Ok(Json(load_cards(&mut conn, filters).await?))
 }
