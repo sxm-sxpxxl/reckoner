@@ -1,6 +1,6 @@
 mod support;
 
-use backend::db::meetings::{self, NewMeeting};
+use backend::db::meetings::{self, MeetingPatch, NewMeeting};
 use backend::db::records::EntryKindRow;
 use chrono::NaiveDate;
 use support::test_pool;
@@ -103,4 +103,78 @@ async fn returns_none_for_a_missing_meeting() {
         .expect("запрос выполнен");
 
     assert!(found.is_none());
+}
+
+#[tokio::test]
+async fn patches_only_provided_fields() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let created = meetings::insert(
+        &mut tx,
+        NewMeeting {
+            title: "Новая встреча".to_owned(),
+            description: "черновик".to_owned(),
+            emoji: "✨".to_owned(),
+            held_on: NaiveDate::from_ymd_opt(2026, 8, 5).expect("дата"),
+        },
+    )
+    .await
+    .expect("вставка");
+
+    let patched = meetings::update(
+        &mut tx,
+        created.id,
+        MeetingPatch {
+            title: Some("Солевые шашлыки".to_owned()),
+            emoji: Some("🔥".to_owned()),
+            ..MeetingPatch::default()
+        },
+    )
+    .await
+    .expect("правка")
+    .expect("встреча существует");
+
+    assert_eq!(patched.title, "Солевые шашлыки");
+    assert_eq!(patched.emoji, "🔥");
+    // Не переданные поля остаются как были.
+    assert_eq!(patched.description, "черновик");
+    assert_eq!(patched.held_on, created.held_on);
+    // Правка двигает updated_at.
+    assert!(patched.updated_at >= created.updated_at);
+}
+
+#[tokio::test]
+async fn deletes_a_meeting_and_reports_whether_it_existed() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let created = meetings::insert(
+        &mut tx,
+        NewMeeting {
+            title: "На удаление".to_owned(),
+            description: String::new(),
+            emoji: "✨".to_owned(),
+            held_on: NaiveDate::from_ymd_opt(2026, 8, 5).expect("дата"),
+        },
+    )
+    .await
+    .expect("вставка");
+
+    assert!(
+        meetings::delete(&mut tx, created.id)
+            .await
+            .expect("удаление")
+    );
+    assert!(
+        !meetings::delete(&mut tx, created.id)
+            .await
+            .expect("повторное удаление")
+    );
+    assert!(
+        meetings::find(&mut tx, created.id)
+            .await
+            .expect("чтение")
+            .is_none()
+    );
 }
