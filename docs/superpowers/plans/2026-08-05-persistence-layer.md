@@ -39,6 +39,18 @@ exists`. Пулер нужен при тысячах короткоживущи�
 базы будет падать на забытом `cargo sqlx prepare`. Взамен каждый запрос закрывается интеграционным
 тестом; именно там опечатка в SQL и всплывает.
 
+**Запросы пишутся строковыми литералами целиком, без `format!`.** В sqlx 0.9 `query`/`query_as`
+принимают `impl SqlSafeStr`, а он реализован только для `&'static str` — склеить запрос в рантайме
+без явной обёртки `AssertSqlSafe` нельзя. Обёртка существует, и наш случай (подстановка
+compile-time константы со списком колонок) был бы безобиден, но применять её здесь не будем: приём,
+появившийся в первом же запросе, повторится во всех следующих, а в Task 13 строится запрос
+с фильтрами и сортировкой — ровно то место, куда потом просачивается пользовательский ввод. Лучше
+заплатить дублированием списка колонок и оставить каждый запрос читаемым как литерал.
+
+Практически это значит: там, где в блоках кода ниже стоит `sqlx::query_as(&format!("… {COLUMNS} …"))`,
+надо писать литерал с выписанными колонками. Динамические части (сортировка в Task 13) собираются
+не склейкой, а `match` по перечислению, каждая ветка которого возвращает свой литерал.
+
 **Функции принимают `&mut PgConnection`.** Не `&PgPool`. Так вызывающий решает, нужна ли транзакция,
 а тест оборачивает случай в транзакцию и откатывает её — изоляция без очистки. Где нужна атомарность
 из нескольких запросов (запись расхода вместе с долями и строкой лога), вызывающий открывает
@@ -671,19 +683,23 @@ pub struct NewMeeting {
     pub held_on: NaiveDate,
 }
 
-/// Колонки, возвращаемые всеми запросами к `meetings`. Байты обложки не
-/// читаются: они не нужны ни списку, ни странице встречи.
-const COLUMNS: &str = "id, title, description, emoji, held_on, cover_mime, \
-                       cover_version, created_at, updated_at";
+// Список колонок выписан в каждом запросе, а не собран через `format!` из общей
+// константы: в sqlx 0.9 запрос обязан быть `&'static str`, иначе нужна обёртка
+// `AssertSqlSafe`. Обёртку не используем сознательно — она снимает защиту от
+// склейки запросов там, где позже появятся фильтры с пользовательским вводом.
+// Байты обложки не читаются ни одним из запросов: они не нужны ни списку,
+// ни странице встречи, и возить их в каждом ответе значило бы тратить трафик.
 
 pub async fn insert(
     conn: &mut PgConnection,
     meeting: NewMeeting,
 ) -> Result<MeetingRow, sqlx::Error> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(
         "insert into meetings (title, description, emoji, held_on) \
-         values ($1, $2, $3, $4) returning {COLUMNS}"
-    ))
+         values ($1, $2, $3, $4) \
+         returning id, title, description, emoji, held_on, cover_mime, \
+                   cover_version, created_at, updated_at",
+    )
     .bind(meeting.title)
     .bind(meeting.description)
     .bind(meeting.emoji)
@@ -692,14 +708,15 @@ pub async fn insert(
     .await
 }
 
-pub async fn find(
-    conn: &mut PgConnection,
-    id: Uuid,
-) -> Result<Option<MeetingRow>, sqlx::Error> {
-    sqlx::query_as(&format!("select {COLUMNS} from meetings where id = $1"))
-        .bind(id)
-        .fetch_optional(conn)
-        .await
+pub async fn find(conn: &mut PgConnection, id: Uuid) -> Result<Option<MeetingRow>, sqlx::Error> {
+    sqlx::query_as(
+        "select id, title, description, emoji, held_on, cover_mime, \
+                cover_version, created_at, updated_at \
+         from meetings where id = $1",
+    )
+    .bind(id)
+    .fetch_optional(conn)
+    .await
 }
 ```
 

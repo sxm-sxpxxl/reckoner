@@ -1,6 +1,8 @@
 mod support;
 
+use backend::db::meetings::{self, NewMeeting};
 use backend::db::records::EntryKindRow;
+use chrono::NaiveDate;
 use support::test_pool;
 
 #[tokio::test]
@@ -58,4 +60,47 @@ async fn entry_kind_round_trips_through_a_text_column() {
             .expect("декодирование из text");
         assert_eq!(decoded, kind, "строка {expected} раскодировалась не так");
     }
+}
+
+#[tokio::test]
+async fn inserts_and_reads_back_a_meeting() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let created = meetings::insert(
+        &mut tx,
+        NewMeeting {
+            title: "Дача у Влада".to_owned(),
+            description: "Три дня, баня и продукты из «Ленты».".to_owned(),
+            emoji: "🏡".to_owned(),
+            held_on: NaiveDate::from_ymd_opt(2026, 7, 23).expect("дата"),
+        },
+    )
+    .await
+    .expect("вставка встречи");
+
+    assert_eq!(created.title, "Дача у Влада");
+    assert_eq!(created.emoji, "🏡");
+    assert_eq!(created.cover_version, 0);
+    assert!(created.cover_mime.is_none());
+
+    let found = meetings::find(&mut tx, created.id)
+        .await
+        .expect("чтение встречи")
+        .expect("встреча существует");
+
+    assert_eq!(found.id, created.id);
+    assert_eq!(found.held_on, created.held_on);
+}
+
+#[tokio::test]
+async fn returns_none_for_a_missing_meeting() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let found = meetings::find(&mut tx, uuid::Uuid::nil())
+        .await
+        .expect("запрос выполнен");
+
+    assert!(found.is_none());
 }
