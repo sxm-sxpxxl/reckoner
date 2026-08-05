@@ -340,10 +340,15 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 /// Паникует, если переменная не задана. Тихо проходить такой тест не должен —
 /// зелёный прогон без базы создаёт ложное чувство покрытия.
 pub async fn test_pool() -> PgPool {
+    // `cargo test` не читает `.env` сам, в отличие от бинарника, который делает
+    // это в `main`. Без этой строки переменная не найдётся, даже если она в файле.
+    // Уже заданные в окружении значения `dotenvy` не перетирает.
+    dotenvy::dotenv().ok();
+
     let url = std::env::var("TEST_DATABASE_URL").expect(
         "TEST_DATABASE_URL не задана. Интеграционные тесты требуют бранч `test` в Neon; \
-         строка подключения кладётся в backend/.env. В CI эти тесты не запускаются: \
-         там идёт только `cargo test --lib`.",
+         строка подключения кладётся в backend/.env (см. docs/setup-neon.md). \
+         В CI эти тесты не запускаются: там идёт только `cargo test --lib`.",
     );
 
     let pool = PgPoolOptions::new()
@@ -411,14 +416,21 @@ Run: `cd backend && cargo test --test persistence`
 
 - [ ] **Step 4: Убедиться, что без переменной тест падает понятно**
 
+Снять переменную из окружения недостаточно: `dotenvy` подставит её из `backend/.env`, и тест пройдёт.
+Чтобы проверить сообщение, файл надо на время убрать — с гарантированным возвратом, иначе одна
+неудачная команда оставит разработчика без строк подключения.
+
 Run (PowerShell):
 
 ```
-cd backend; $saved = $env:TEST_DATABASE_URL; $env:TEST_DATABASE_URL = $null; cargo test --test persistence 2>&1 | Select-String "TEST_DATABASE_URL"; $env:TEST_DATABASE_URL = $saved
+$envPath = "D:\rust-projects\reckoner\backend\.env"; $bak = "$envPath.verify-bak"; Set-Location D:\rust-projects\reckoner\backend; try { Rename-Item $envPath $bak -ErrorAction Stop; if (Test-Path Env:\TEST_DATABASE_URL) { Remove-Item Env:\TEST_DATABASE_URL }; cargo test --test persistence 2>&1 | Select-String "TEST_DATABASE_URL|panicked" } finally { if (Test-Path $bak) { Rename-Item $bak $envPath } }; "env на месте: " + (Test-Path $envPath)
 ```
 
-Ожидается: в выводе текст про то, что переменная не задана и где взять строку подключения. Это
-проверка сообщения, а не поведения: его будет читать человек, у которого тесты не идут.
+Ожидается: в выводе текст про то, что переменная не задана и где взять строку подключения, затем
+`env на месте: True`. Это проверка сообщения, а не поведения: его будет читать человек, у которого
+тесты не идут. Ненулевой код возврата здесь нормален — тест обязан упасть.
+
+После проверки прогнать тест ещё раз и убедиться, что он снова зелёный.
 
 - [ ] **Step 5: Закоммитить**
 
