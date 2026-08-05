@@ -1232,6 +1232,7 @@ git commit -m "feat(domain): compute participant net balances"
 `backend/src/domain/settle.rs`:
 
 ```rust
+use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use super::types::{Participant, ParticipantId};
@@ -1312,6 +1313,26 @@ mod tests {
     }
 
     #[test]
+    fn breaks_equal_debts_by_position_not_by_input_order() {
+        // Двое должны одинаково — кто переводит первым, решает порядок
+        // добавления, а не порядок строк, пришедших из базы. Срез намеренно
+        // перемешан: без сортировки по position план вышел бы обратным.
+        let people = participants(3);
+        let (early, late, creditor) = (people[0], people[1], people[2]);
+        let net = balances(&[(early, -100), (late, -100), (creditor, 200)]);
+
+        let plan = settlement_plan(&[late, creditor, early], &net);
+
+        assert_eq!(
+            plan,
+            vec![
+                Transfer { from: early.id, to: creditor.id, amount: 100 },
+                Transfer { from: late.id, to: creditor.id, amount: 100 },
+            ]
+        );
+    }
+
+    #[test]
     fn plan_settles_every_balance_to_zero() {
         let people = participants(5);
         let net = balances(&[
@@ -1384,9 +1405,10 @@ pub fn settlement_plan(
         }
     }
 
-    // Стабильная сортировка: при равных суммах сохраняется порядок position.
-    debtors.sort_by(|left, right| right.1.cmp(&left.1));
-    creditors.sort_by(|left, right| right.1.cmp(&left.1));
+    // `sort_by_key` стабильная, поэтому при равных суммах сохраняется порядок
+    // по position, заданный выше.
+    debtors.sort_by_key(|(_, amount)| Reverse(*amount));
+    creditors.sort_by_key(|(_, amount)| Reverse(*amount));
 
     let mut plan = Vec::new();
     let mut debtor = 0;
@@ -1419,7 +1441,16 @@ pub fn settlement_plan(
 
 Run: `cd backend && cargo test --lib settle`
 
-Ожидается: `test result: ok. 4 passed; 0 failed`.
+Ожидается: `test result: ok. 5 passed; 0 failed`.
+
+Про `sort_by_key` с `Reverse`: писать `sort_by(|l, r| r.1.cmp(&l.1))` нельзя — clippy отбивает это
+через `unnecessary_sort_by`, а сборка идёт с `-D warnings`. Форма с `Reverse` к тому же совпадает
+с той, что уже используется в `shares.rs`, и тоже стабильна, так что тай-брейк по `position` цел.
+
+Тест `breaks_equal_debts_by_position_not_by_input_order` проверен на то, что он действительно
+закрепляет сортировку: если убрать `ordered.sort_by_key(...)`, падает только он, остальные четыре
+проходят. Без него поломка порядка прошла бы незамеченной — та же слепая зона, что нашлась в
+`shares.rs`.
 
 - [ ] **Step 5: Коммит**
 
