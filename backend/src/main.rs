@@ -1,10 +1,10 @@
 use axum::{
+    Json, Router,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
     routing::get,
-    Json, Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
@@ -22,9 +22,7 @@ async fn main() {
 
     println!("listening on {}", listener.local_addr().unwrap());
 
-    axum::serve(listener, app)
-        .await
-        .expect("server error");
+    axum::serve(listener, app).await.expect("server error");
 }
 
 async fn health() -> Json<Value> {
