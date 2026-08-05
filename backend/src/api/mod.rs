@@ -40,6 +40,10 @@ pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
         .route("/api/health", get(health))
         .route("/api/meetings", post(meetings::create))
         .route("/api/meetings/:id/entries", post(entries::create))
+        .route(
+            "/api/meetings/:id/entries/:eid",
+            patch(entries::update).delete(entries::destroy),
+        )
         .route("/api/meetings/:id/participants", post(participants::create))
         .route(
             "/api/meetings/:id/participants/:pid",

@@ -977,3 +977,230 @@ async fn entry_in_a_missing_meeting_is_not_found() {
 
     assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
 }
+
+/// Заготовка: расход на 400 ₽ от указанного участника, делится на всех.
+async fn seed_expense(conn: &mut sqlx::PgConnection, meeting_id: Uuid, payer: Uuid) -> Uuid {
+    db::entries::insert(
+        &mut *conn,
+        meeting_id,
+        db::entries::NewEntry {
+            kind: db::records::EntryKindRow::Expense,
+            payer_id: payer,
+            recipient_id: None,
+            amount_rubles: 400,
+            description: "Продукты".to_owned(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("вставка расхода")
+    .id
+}
+
+#[tokio::test]
+async fn patch_replaces_shares_wholesale() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    let entry_id = seed_expense(&mut tx, meeting_id, people[0]).await;
+
+    let view = api_entries::update_entry(
+        &mut tx,
+        meeting_id,
+        entry_id,
+        api_entries::UpdateEntry {
+            payer_id: None,
+            recipient_id: None,
+            amount_rubles: Some(1000),
+            description: Some("Мясо".to_owned()),
+            occurred_at: None,
+            shares: Some(vec![api_entries::ShareInput {
+                participant_id: people[3],
+                weight_quarters: 0,
+            }]),
+        },
+    )
+    .await
+    .expect("правка записи");
+
+    assert_eq!(view.entries[0].amount_rubles, 1000);
+    assert_eq!(view.entries[0].description, "Мясо");
+    assert!(!view.entries[0].shared_by_all);
+    // 1000 на трёх с полной долей → 334 / 333 / 333, четвёртый не платит.
+    assert_eq!(view.participants[3].net_rubles, 0);
+    assert_eq!(view.log[0].text, "Запись изменена: 1\u{a0}000\u{a0}₽");
+}
+
+#[tokio::test]
+async fn empty_shares_return_the_expense_to_an_even_split() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    let entry_id = db::entries::insert(
+        &mut tx,
+        meeting_id,
+        db::entries::NewEntry {
+            kind: db::records::EntryKindRow::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 400,
+            description: "Продукты".to_owned(),
+            occurred_at: None,
+            shares: vec![(people[3], 0)],
+        },
+    )
+    .await
+    .expect("вставка расхода")
+    .id;
+
+    // `Some(vec![])` — «снять все неполные доли», в отличие от `None`,
+    // означающего «доли не трогать».
+    let view = api_entries::update_entry(
+        &mut tx,
+        meeting_id,
+        entry_id,
+        api_entries::UpdateEntry {
+            payer_id: None,
+            recipient_id: None,
+            amount_rubles: None,
+            description: None,
+            occurred_at: None,
+            shares: Some(Vec::new()),
+        },
+    )
+    .await
+    .expect("правка записи");
+
+    assert!(view.entries[0].shared_by_all);
+    assert_eq!(view.participants[3].net_rubles, -100);
+}
+
+#[tokio::test]
+async fn patch_cannot_add_a_recipient_to_an_expense() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    let entry_id = seed_expense(&mut tx, meeting_id, people[0]).await;
+
+    // Превращение расхода в перевод — это другая запись; в интерфейсе это
+    // делается удалением и повторным вводом.
+    let error = api_entries::update_entry(
+        &mut tx,
+        meeting_id,
+        entry_id,
+        api_entries::UpdateEntry {
+            payer_id: None,
+            recipient_id: Some(people[1]),
+            amount_rubles: None,
+            description: None,
+            occurred_at: None,
+            shares: None,
+        },
+    )
+    .await
+    .expect_err("получатель у расхода");
+
+    assert_eq!(validation_field(&error), "recipientId");
+}
+
+#[tokio::test]
+async fn patch_cannot_make_a_transfer_point_at_its_payer() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    let entry_id = db::entries::insert(
+        &mut tx,
+        meeting_id,
+        db::entries::NewEntry {
+            kind: db::records::EntryKindRow::Transfer,
+            payer_id: people[0],
+            recipient_id: Some(people[1]),
+            amount_rubles: 225,
+            description: String::new(),
+            occurred_at: None,
+            shares: Vec::new(),
+        },
+    )
+    .await
+    .expect("вставка перевода")
+    .id;
+
+    // Проверять надо действующие значения, а не присланные: меняется
+    // плательщик, а совпасть он может с получателем, которого в теле нет.
+    let error = api_entries::update_entry(
+        &mut tx,
+        meeting_id,
+        entry_id,
+        api_entries::UpdateEntry {
+            payer_id: Some(people[1]),
+            recipient_id: None,
+            amount_rubles: None,
+            description: None,
+            occurred_at: None,
+            shares: None,
+        },
+    )
+    .await
+    .expect_err("перевод сам себе");
+
+    assert_eq!(validation_field(&error), "payerId");
+}
+
+#[tokio::test]
+async fn patch_of_an_entry_from_another_meeting_is_not_found() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (first_meeting, first_people) = seed_dacha(&mut tx).await;
+    let (second_meeting, _) = seed_dacha(&mut tx).await;
+    let entry_id = seed_expense(&mut tx, first_meeting, first_people[0]).await;
+
+    let error = api_entries::update_entry(
+        &mut tx,
+        second_meeting,
+        entry_id,
+        api_entries::UpdateEntry {
+            payer_id: None,
+            recipient_id: None,
+            amount_rubles: Some(1),
+            description: None,
+            occurred_at: None,
+            shares: None,
+        },
+    )
+    .await
+    .expect_err("чужая запись");
+
+    assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
+}
+
+#[tokio::test]
+async fn delete_logs_the_amount_and_removes_the_entry() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    let entry_id = seed_expense(&mut tx, meeting_id, people[0]).await;
+
+    let view = api_entries::remove_entry(&mut tx, meeting_id, entry_id)
+        .await
+        .expect("удаление записи");
+
+    assert!(view.entries.is_empty());
+    assert_eq!(view.totals.spent_rubles, 0);
+    assert_eq!(view.log[0].text, "Удалена запись на 400\u{a0}₽");
+}
+
+#[tokio::test]
+async fn delete_of_an_entry_from_another_meeting_is_not_found() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (first_meeting, first_people) = seed_dacha(&mut tx).await;
+    let (second_meeting, _) = seed_dacha(&mut tx).await;
+    let entry_id = seed_expense(&mut tx, first_meeting, first_people[0]).await;
+
+    let error = api_entries::remove_entry(&mut tx, second_meeting, entry_id)
+        .await
+        .expect_err("чужая запись");
+
+    assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
+}

@@ -158,6 +158,147 @@ fn normalize_description(kind: EntryKindInput, raw: &str) -> String {
     }
 }
 
+/// `None` в поле означает «не менять». Вид записи не меняется: превращение
+/// расхода в перевод — это другая запись, в интерфейсе это делается удалением
+/// и повторным вводом.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateEntry {
+    pub payer_id: Option<Uuid>,
+    pub recipient_id: Option<Uuid>,
+    pub amount_rubles: Option<i64>,
+    pub description: Option<String>,
+    pub occurred_at: Option<DateTime<Utc>>,
+    /// `None` — доли не трогать. `Some(vec![])` — снять все неполные доли,
+    /// то есть вернуть расход к делению поровну.
+    pub shares: Option<Vec<ShareInput>>,
+}
+
+pub async fn update_entry(
+    conn: &mut PgConnection,
+    meeting_id: Uuid,
+    entry_id: Uuid,
+    body: UpdateEntry,
+) -> Result<MeetingView, ApiError> {
+    let current = require_entry(&mut *conn, meeting_id, entry_id).await?;
+    let participants = db::participants::list_for_meeting(&mut *conn, meeting_id).await?;
+    let is_transfer = current.kind == EntryKindRow::Transfer;
+
+    let amount = match body.amount_rubles {
+        Some(value) => Some(validate::amount(value)?),
+        None => None,
+    };
+
+    if let Some(payer_id) = body.payer_id {
+        validate::belongs_to_meeting(&participants, payer_id, "payerId")?;
+    }
+
+    // Сверяются действующие значения, а не присланные: поменять можно одну
+    // сторону перевода, а совпасть она может с той, которой в теле нет.
+    let payer_id = body.payer_id.unwrap_or(current.payer_id);
+    let recipient_id = match (is_transfer, body.recipient_id) {
+        (false, Some(_)) => {
+            return Err(ApiError::validation(
+                "recipientId",
+                "у расхода не бывает получателя",
+            ));
+        }
+        (false, None) => None,
+        (true, Some(id)) => {
+            validate::belongs_to_meeting(&participants, id, "recipientId")?;
+            Some(id)
+        }
+        (true, None) => current.recipient_id,
+    };
+
+    if recipient_id == Some(payer_id) {
+        // Поле в ошибке — то, которое клиент только что менял: подсветить надо
+        // его, а не то, что осталось прежним.
+        let field = if body.payer_id.is_some() {
+            "payerId"
+        } else {
+            "recipientId"
+        };
+
+        return Err(ApiError::validation(field, "перевод себе ничего не меняет"));
+    }
+
+    let shares = match &body.shares {
+        Some(raw) => {
+            if is_transfer && !raw.is_empty() {
+                return Err(ApiError::validation("shares", "перевод не делится на доли"));
+            }
+
+            Some(validate::shares(raw, &participants)?)
+        }
+        None => None,
+    };
+
+    let kind = if is_transfer {
+        EntryKindInput::Transfer
+    } else {
+        EntryKindInput::Expense
+    };
+    let description = body
+        .description
+        .as_deref()
+        .map(|raw| normalize_description(kind, raw));
+
+    let updated = db::entries::update(
+        &mut *conn,
+        entry_id,
+        db::entries::EntryPatch {
+            payer_id: body.payer_id,
+            recipient_id: body.recipient_id,
+            amount_rubles: amount,
+            description,
+            occurred_at: body.occurred_at,
+            shares,
+        },
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    db::log::append(
+        &mut *conn,
+        meeting_id,
+        &texts::entry_updated(updated.amount_rubles),
+    )
+    .await?;
+
+    meetings::load_view(conn, meeting_id).await
+}
+
+pub async fn remove_entry(
+    conn: &mut PgConnection,
+    meeting_id: Uuid,
+    entry_id: Uuid,
+) -> Result<MeetingView, ApiError> {
+    // Сумма нужна для строки лога, поэтому читается до удаления.
+    let current = require_entry(&mut *conn, meeting_id, entry_id).await?;
+    let amount = current.amount_rubles;
+
+    db::entries::delete(&mut *conn, entry_id).await?;
+    db::log::append(&mut *conn, meeting_id, &texts::entry_deleted(amount)).await?;
+
+    meetings::load_view(conn, meeting_id).await
+}
+
+/// Запись, принадлежащая этой встрече. Чужая — `404`: по этому адресу её нет.
+async fn require_entry(
+    conn: &mut PgConnection,
+    meeting_id: Uuid,
+    entry_id: Uuid,
+) -> Result<db::records::EntryRow, ApiError> {
+    meetings::require_meeting(&mut *conn, meeting_id).await?;
+
+    db::entries::list_for_meeting(&mut *conn, meeting_id)
+        .await?
+        .into_iter()
+        .find(|row| row.id == entry_id)
+        .ok_or(ApiError::NotFound)
+}
+
 pub async fn create(
     State(pool): State<PgPool>,
     Path(meeting_id): Path<Uuid>,
@@ -165,6 +306,29 @@ pub async fn create(
 ) -> Result<Json<MeetingView>, ApiError> {
     let mut tx = pool.begin().await?;
     let view = add_entry(&mut tx, meeting_id, body).await?;
+    tx.commit().await?;
+
+    Ok(Json(view))
+}
+
+pub async fn update(
+    State(pool): State<PgPool>,
+    Path((meeting_id, entry_id)): Path<(Uuid, Uuid)>,
+    JsonBody(body): JsonBody<UpdateEntry>,
+) -> Result<Json<MeetingView>, ApiError> {
+    let mut tx = pool.begin().await?;
+    let view = update_entry(&mut tx, meeting_id, entry_id, body).await?;
+    tx.commit().await?;
+
+    Ok(Json(view))
+}
+
+pub async fn destroy(
+    State(pool): State<PgPool>,
+    Path((meeting_id, entry_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<MeetingView>, ApiError> {
+    let mut tx = pool.begin().await?;
+    let view = remove_entry(&mut tx, meeting_id, entry_id).await?;
     tx.commit().await?;
 
     Ok(Json(view))
