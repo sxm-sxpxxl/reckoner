@@ -38,7 +38,11 @@ pub async fn load(conn: &mut PgConnection, meeting_id: Uuid) -> Result<StoredFac
     Ok(build(&participant_rows, &entry_rows, &share_rows))
 }
 
-fn build(
+/// Собирает факты из уже прочитанных строк. Публичная, потому что список встреч
+/// читает строки пачкой на все встречи сразу (`… where meeting_id = any($1)`)
+/// и раскладывает их по встречам сам — тогда `load` на каждую встречу означал бы
+/// три запроса на карточку.
+pub fn build(
     participant_rows: &[ParticipantRow],
     entry_rows: &[EntryRow],
     share_rows: &[ShareRow],

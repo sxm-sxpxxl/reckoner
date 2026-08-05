@@ -8,6 +8,7 @@
 pub mod error;
 pub mod money;
 pub mod texts;
+pub mod view;
 
 use axum::extract::{DefaultBodyLimit, FromRequest, Request};
 use axum::routing::get;
