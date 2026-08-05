@@ -34,9 +34,15 @@ export default defineConfig({
     }),
   ],
   server: {
+    // Явный IPv4: по умолчанию Vite биндится на localhost, который на Windows
+    // разрешается в ::1, и dev-сервер становится недоступен по 127.0.0.1.
+    // Поменяйте на true, чтобы открыть доступ по локальной сети (проверка с телефона).
+    host: '127.0.0.1',
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // Тоже 127.0.0.1, а не localhost: backend слушает 0.0.0.0, то есть только
+        // IPv4, и если Node разрешит localhost в ::1 — прокси упадёт с ECONNREFUSED.
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
     },
