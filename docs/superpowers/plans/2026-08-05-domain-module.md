@@ -666,7 +666,9 @@ git commit -m "feat(domain): respect partial expense shares in quarters"
 
 ### Task 5: Доли расхода — нулевые веса
 
-Два краевых случая: если доля нулевая у всех, спека требует считать всех по полной доле; если нулевая у одного, он не должен заплатить ни рубля — в том числе при раздаче остатка.
+Последний краевой случай: если доля нулевая у всех, сумма весов равна нулю и деление упало бы —
+спека требует считать в этом случае всех по полной доле. Случай «нулевая доля у одного» закрыт
+ещё в Task 4 и там же проверен.
 
 **Files:**
 - Modify: `backend/src/domain/shares.rs`
@@ -678,27 +680,74 @@ git commit -m "feat(domain): respect partial expense shares in quarters"
 ```rust
     #[test]
     fn falls_back_to_equal_split_when_everyone_is_excluded() {
-        let people = participants(4);
+        let people = participants(3);
         let entry = expense_with_weights(
             people[0],
-            8400,
-            &[
-                (people[0], 0),
-                (people[1], 0),
-                (people[2], 0),
-                (people[3], 0),
-            ],
+            100,
+            &[(people[0], 0), (people[1], 0), (people[2], 0)],
         );
 
         let shares = expense_shares(&entry, &people);
 
         // Спека: если сумма весов нулевая, расход делится на всех поровну.
-        for person in &people {
-            assert_eq!(shares[&person.id], 2100, "участник {}", person.position);
-        }
+        // Сумма взята неделимая, чтобы откат прошёл через раздачу остатка,
+        // а не мимо неё.
+        assert_eq!(shares[&people[0].id], 34);
+        assert_eq!(shares[&people[1].id], 33);
+        assert_eq!(shares[&people[2].id], 33);
+        assert_eq!(shares.values().sum::<i64>(), 100);
     }
 
+    #[test]
+    fn breaks_ties_by_position_not_by_id() {
+        // Хелпер `participant` выводит id из позиции, поэтому во всех остальных
+        // тестах два порядка совпадают и тай-брейк по position не проверяется.
+        // Здесь они расходятся намеренно.
+        let first = Participant {
+            id: ParticipantId(Uuid::from_u128(9)),
+            position: 0,
+        };
+        let second = Participant {
+            id: ParticipantId(Uuid::from_u128(2)),
+            position: 1,
+        };
+        let people = vec![first, second];
+        let entry = expense(first, 3);
+
+        let shares = expense_shares(&entry, &people);
+
+        // Лишний рубль — добавленному раньше, а не тому, у кого меньше id.
+        assert_eq!(shares[&first.id], 2);
+        assert_eq!(shares[&second.id], 1);
+    }
+
+    #[test]
+    fn single_participant_pays_the_whole_expense() {
+        let people = participants(1);
+
+        let full = expense(people[0], 101);
+        assert_eq!(expense_shares(&full, &people)[&people[0].id], 101);
+
+        // Даже если исключить единственного участника, платить всё равно ему:
+        // сумма весов нулевая, значит срабатывает откат.
+        let excluded = expense_with_weights(people[0], 101, &[(people[0], 0)]);
+        assert_eq!(expense_shares(&excluded, &people)[&people[0].id], 101);
+    }
+
+    #[test]
+    fn survives_amounts_that_would_overflow_i64_when_scaled() {
+        let people = participants(3);
+        let entry = expense(people[0], i64::MAX);
+
+        let shares = expense_shares(&entry, &people);
+
+        // Смысл расширения до i128: `amount * 4` в i64 здесь бы переполнилось.
+        assert_eq!(shares.values().sum::<i64>(), i64::MAX);
+    }
 ```
+
+Тесту про тай-брейк нужен `uuid::Uuid` в области видимости `mod tests` — `Participant`
+и `ParticipantId` приходят через `use super::*`, для `Uuid` добавьте `use uuid::Uuid;`.
 
 Второй краевой случай — «исключённый не платит ни рубля остатка» — в этом таске **не появляется**:
 он уже выполняется после Task 4 и проверяется там тестом
@@ -717,7 +766,10 @@ Run: `cd backend && cargo test --lib shares`
 
 - [ ] **Step 3: Обработать нулевые веса**
 
-В `expense_shares` после вычисления `weighted` и `total_quarters` вставить откат на равное деление, а в накопление `remainders` добавить фильтр по нулевому весу. Итоговое тело функции:
+В `expense_shares` вставить откат на равное деление между построением `weighted` и вычислением
+`total_quarters`. Порядок именно такой: сумма весов считается уже после отката, поэтому она
+выводится из `weighted` на любом пути и не может с ним разойтись. Фильтр по нулевому весу в
+раздаче остатка не нужен — см. пояснение выше. Итоговое тело функции:
 
 ```rust
 pub fn expense_shares(
@@ -739,7 +791,9 @@ pub fn expense_shares(
     );
 
     let mut shares: BTreeMap<ParticipantId, i64> = BTreeMap::new();
-    // Первая из двух причин, по которым `total_quarters` не может быть нулём.
+    // Ранний выход для читаемости: дальше нечего делить, и карта пуста.
+    // Деления на ноль тут нет и без этой проверки — цикл начисления просто
+    // не сделал бы ни одной итерации.
     if participants.is_empty() {
         return shares;
     }
@@ -748,16 +802,17 @@ pub fn expense_shares(
         .iter()
         .map(|participant| (*participant, entry.quarters_for(participant.id)))
         .collect();
-    let mut total_quarters: i64 = weighted.iter().map(|(_, quarters)| *quarters).sum();
 
-    // Вторая: расход, из которого исключили всех, спека требует делить на всех
-    // поровну — иначе здесь было бы деление на ноль.
-    if total_quarters == 0 {
-        for (_, quarters) in weighted.iter_mut() {
+    // Расход, из которого исключили всех, спека требует делить на всех поровну.
+    // Иначе сумма весов была бы нулевой и ниже случилось бы деление на ноль.
+    if weighted.iter().all(|(_, quarters)| *quarters == 0) {
+        for (_, quarters) in &mut weighted {
             *quarters = FULL_QUARTERS;
         }
-        total_quarters = FULL_QUARTERS * participants.len() as i64;
     }
+
+    // Сумма считается после отката, поэтому не может разойтись с `weighted`.
+    let total_quarters: i64 = weighted.iter().map(|(_, quarters)| *quarters).sum();
 
     // Целая часть каждому, дробные части копим, чтобы раздать остаток.
     let mut remainders: Vec<(Participant, i128)> = Vec::new();
@@ -773,11 +828,11 @@ pub fn expense_shares(
     }
 
     // Остаток рублей — тем, у кого дробная часть больше. Убывание по остатку —
-    // не косметика: у участника с нулевой долей остаток всегда нулевой, а рублей
-    // остатка всегда строго меньше, чем участников с положительным остатком, —
-    // вместе это и не даёт исключённому из расхода заплатить ни рубля. При
-    // равенстве — по порядку добавления, затем по id, чтобы порядок был полным
-    // и результат не зависел от порядка строк, пришедших из базы.
+    // не косметика: у участника с нулевой долей остаток всегда нулевой, а когда
+    // остаток есть, рублей в нём строго меньше, чем участников с положительным
+    // остатком, — вместе это и не даёт исключённому из расхода заплатить ни
+    // рубля. При равенстве — по порядку добавления, затем по id, чтобы порядок
+    // был полным и результат не зависел от порядка строк, пришедших из базы.
     remainders.sort_by_key(|(participant, remainder)| {
         (Reverse(*remainder), participant.position, participant.id)
     });
@@ -811,7 +866,7 @@ use super::types::{Entry, Participant, ParticipantId, FULL_QUARTERS};
 
 Run: `cd backend && cargo test --lib shares`
 
-Ожидается: `test result: ok. 11 passed; 0 failed`.
+Ожидается: `test result: ok. 14 passed; 0 failed`.
 
 - [ ] **Step 5: Коммит**
 
@@ -1972,7 +2027,7 @@ Run: `cd backend && cargo test --lib properties`
 
 Run: `cd backend && cargo test`
 
-Ожидается: все тесты зелёные. Ориентир по количеству — 11 в `shares`, 7 в `balance`, 4 в `settle`, 4 в `status`, 7 в `reckoning`, 2 в `properties`.
+Ожидается: все тесты зелёные. Ориентир по количеству — 14 в `shares`, 7 в `balance`, 4 в `settle`, 4 в `status`, 7 в `reckoning`, 2 в `properties`.
 
 Run: `cd backend && cargo clippy --all-targets -- -D warnings`
 
