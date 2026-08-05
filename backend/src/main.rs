@@ -1,5 +1,3 @@
-use axum::{Json, Router, routing::get};
-use serde_json::{Value, json};
 use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
@@ -13,12 +11,10 @@ async fn main() {
     let pool = or_exit(backend::db::connect(&url).await);
     or_exit(backend::db::run_migrations(&pool).await);
 
+    // Сужение CORS до одного origin — последняя задача этого плана; пока
+    // поведение то же, что было в скаффолде.
     let cors = CorsLayer::new().allow_origin(Any);
-
-    let app = Router::new()
-        .route("/api/health", get(health))
-        .layer(cors)
-        .with_state(pool);
+    let app = backend::api::router(pool, cors);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await
@@ -42,8 +38,4 @@ fn or_exit<T>(result: Result<T, backend::db::StartupError>) -> T {
             std::process::exit(1);
         }
     }
-}
-
-async fn health() -> Json<Value> {
-    Json(json!({ "status": "ok" }))
 }

@@ -94,6 +94,40 @@ pub async fn shares_for_meeting(
     .await
 }
 
+/// Записи сразу нескольких встреч — для списка встреч. Порядок внутри встречи
+/// тот же, что у `list_for_meeting`: новые сверху.
+pub async fn list_for_meetings(
+    conn: &mut PgConnection,
+    meeting_ids: &[Uuid],
+) -> Result<Vec<EntryRow>, sqlx::Error> {
+    sqlx::query_as(
+        "select id, meeting_id, kind, payer_id, recipient_id, \
+                amount_rubles, description, occurred_at, created_at \
+         from entries where meeting_id = any($1) \
+         order by meeting_id, occurred_at desc, id",
+    )
+    .bind(meeting_ids)
+    .fetch_all(conn)
+    .await
+}
+
+/// Доли записей сразу нескольких встреч. Раскладывает их по встречам
+/// вызывающий: `entry_shares` не знает про встречу, зато знает про запись,
+/// а её принадлежность уже прочитана вместе с записями.
+pub async fn shares_for_meetings(
+    conn: &mut PgConnection,
+    meeting_ids: &[Uuid],
+) -> Result<Vec<ShareRow>, sqlx::Error> {
+    sqlx::query_as(
+        "select s.entry_id, s.participant_id, s.weight_quarters \
+         from entry_shares s join entries e on e.id = s.entry_id \
+         where e.meeting_id = any($1)",
+    )
+    .bind(meeting_ids)
+    .fetch_all(conn)
+    .await
+}
+
 /// Частичная правка записи. `None` в поле означает «не менять».
 ///
 /// `kind` менять нельзя: превращение расхода в перевод — это другая запись,

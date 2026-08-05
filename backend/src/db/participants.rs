@@ -56,6 +56,26 @@ pub async fn list_for_meeting(
     .await
 }
 
+/// Участники сразу нескольких встреч. Нужны списку встреч: без этого запроса
+/// карточка стоила бы отдельного обращения к базе, и список из двадцати встреч
+/// превратился бы в шестьдесят round-trip'ов до Neon.
+///
+/// `= any($1)` принимает массив параметром, поэтому запрос остаётся литералом
+/// и склеивать `in (…)` из идентификаторов не нужно.
+pub async fn list_for_meetings(
+    conn: &mut PgConnection,
+    meeting_ids: &[Uuid],
+) -> Result<Vec<ParticipantRow>, sqlx::Error> {
+    sqlx::query_as(
+        "select id, meeting_id, name, emoji, color_index, position, created_at \
+         from participants where meeting_id = any($1) \
+         order by meeting_id, position",
+    )
+    .bind(meeting_ids)
+    .fetch_all(conn)
+    .await
+}
+
 /// Меняются только имя и эмодзи: позиция и цвет закреплены за участником
 /// с момента добавления.
 pub async fn update(
