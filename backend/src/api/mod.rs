@@ -14,7 +14,7 @@ pub mod validate;
 pub mod view;
 
 use axum::extract::{DefaultBodyLimit, FromRequest, Request};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -39,6 +39,10 @@ pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
         .route("/api/health", get(health))
         .route("/api/meetings", post(meetings::create))
         .route("/api/meetings/:id/participants", post(participants::create))
+        .route(
+            "/api/meetings/:id/participants/:pid",
+            patch(participants::update).delete(participants::destroy),
+        )
         .route(
             "/api/meetings/:id",
             get(meetings::show)

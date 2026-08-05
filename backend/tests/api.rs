@@ -488,3 +488,103 @@ async fn participant_in_a_missing_meeting_is_not_found() {
 
     assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
 }
+
+#[tokio::test]
+async fn patch_keeps_the_untouched_field() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let view = participants::update_participant(
+        &mut tx,
+        meeting_id,
+        people[0],
+        participants::UpdateParticipant {
+            name: Some("Анастасия".to_owned()),
+            emoji: None,
+        },
+    )
+    .await
+    .expect("правка участника");
+
+    assert_eq!(view.participants[0].name, "Анастасия");
+    assert_eq!(view.participants[0].emoji, "🦊");
+    // Позиция и цвет закреплены за участником с момента добавления.
+    assert_eq!(view.participants[0].position, 0);
+    assert_eq!(view.log[0].text, "Профиль участника обновлён: Анастасия");
+}
+
+#[tokio::test]
+async fn participant_of_another_meeting_is_not_found() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (first_meeting, first_people) = seed_dacha(&mut tx).await;
+    let (second_meeting, _) = seed_dacha(&mut tx).await;
+    assert_ne!(first_meeting, second_meeting);
+
+    // Участник существует, но не в этой встрече — по этому адресу его нет.
+    // Без проверки правка прошла бы и изменила чужую встречу.
+    let error = participants::update_participant(
+        &mut tx,
+        second_meeting,
+        first_people[0],
+        participants::UpdateParticipant {
+            name: Some("Кто-то".to_owned()),
+            emoji: None,
+        },
+    )
+    .await
+    .expect_err("чужой участник");
+
+    assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
+}
+
+#[tokio::test]
+async fn deleting_a_participant_takes_their_entries() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    for payer in [people[0], people[1]] {
+        db::entries::insert(
+            &mut tx,
+            meeting_id,
+            db::entries::NewEntry {
+                kind: db::records::EntryKindRow::Expense,
+                payer_id: payer,
+                recipient_id: None,
+                amount_rubles: 400,
+                description: String::new(),
+                occurred_at: None,
+                shares: Vec::new(),
+            },
+        )
+        .await
+        .expect("вставка расхода");
+    }
+
+    let view = participants::remove_participant(&mut tx, meeting_id, people[0])
+        .await
+        .expect("удаление участника");
+
+    // Требование дизайна: вместе с участником уходят все записи, где он
+    // плательщик или получатель. Значит и сумма встречи падает.
+    assert_eq!(view.participants.len(), 3);
+    assert_eq!(view.entries.len(), 1);
+    assert_eq!(view.totals.spent_rubles, 400);
+    // Имя взято до удаления — после него взять его уже негде.
+    assert_eq!(view.log[0].text, "Участник удалён: Настя");
+}
+
+#[tokio::test]
+async fn deleting_a_participant_of_another_meeting_is_not_found() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (_, people) = seed_dacha(&mut tx).await;
+    let (other_meeting, _) = seed_dacha(&mut tx).await;
+
+    let error = participants::remove_participant(&mut tx, other_meeting, people[0])
+        .await
+        .expect_err("чужой участник");
+
+    assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
+}
