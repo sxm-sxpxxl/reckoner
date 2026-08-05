@@ -15,8 +15,17 @@
 Без них план не выполняется:
 
 1. Проект в Neon с тремя бранчами: `main` (прод), `dev` (разработка), `test` (интеграционные тесты).
-2. `backend/.env` со строкой `DATABASE_URL=<pooled connection string бранча dev>`.
-3. `backend/.env` со строкой `TEST_DATABASE_URL=<pooled connection string бранча test>`.
+2. `backend/.env` со строкой `DATABASE_URL=<unpooled строка подключения бранча dev>`.
+3. `backend/.env` со строкой `TEST_DATABASE_URL=<unpooled строка подключения бранча test>`.
+
+Пошаговая инструкция по настройке — [`docs/setup-neon.md`](../../setup-neon.md).
+
+**Строки нужны именно unpooled, без `-pooler` в имени хоста.** Pooled-эндпоинт Neon — это PgBouncer
+в transaction mode: он выбрасывает подготовленные запросы между транзакциями, а `sqlx` по умолчанию
+их использует, и на случайных запросах полетят ошибки `prepared statement "sqlx_s_N" already
+exists`. Пулер нужен при тысячах короткоживущих подключений; у нас один процесс с пулом на пять
+соединений. Параметр `channel_binding=require` из строки тоже убирается — TLS даёт
+`sslmode=require`.
 
 Две переменные, а не одна, — намеренно. Интеграционные тесты пишут и удаляют данные; перепутать их
 базу с рабочей нельзя. Тест, не нашедший `TEST_DATABASE_URL`, обязан падать с внятным сообщением,

@@ -554,7 +554,16 @@ Neon free даёт до 10 бранчей, используем три:
 копирование `dist/index.html` → `dist/404.html`, публикация через `actions/deploy-pages`.
 
 Бэкенд — `render.yaml` в репозитории, автодеплой Render из основной ветки. Переменные:
-`DATABASE_URL` (pooled-строка Neon), `ALLOWED_ORIGIN`, `PORT` (даёт Render).
+`DATABASE_URL` (**unpooled**-строка Neon, без `-pooler` в хосте), `ALLOWED_ORIGIN`,
+`PORT` (даёт Render).
+
+Про unpooled: pooled-эндпоинт Neon — это PgBouncer в transaction mode, который выбрасывает
+подготовленные запросы между транзакциями, а `sqlx` по умолчанию их использует, и на случайных
+запросах начинают лететь ошибки `prepared statement "sqlx_s_N" already exists`. Пулер решает задачу
+тысяч короткоживущих подключений (serverless-функции); у нас один долгоживущий процесс со своим
+пулом на пять соединений, поэтому он не нужен. Из строки также убирается `channel_binding=require`:
+TLS обеспечивает `sslmode=require`, а поддержку привязки канала на стороне драйвера мы не
+проверяли.
 
 ## Тесты
 
