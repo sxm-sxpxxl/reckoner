@@ -6,6 +6,7 @@
 pub mod balance;
 pub mod settle;
 pub mod shares;
+pub mod status;
 pub mod types;
 
 #[cfg(test)]
@@ -14,6 +15,7 @@ pub mod testing;
 pub use balance::{contributions, net_balances};
 pub use settle::{Transfer, settlement_plan};
 pub use shares::expense_shares;
+pub use status::MeetingStatus;
 pub use types::{
     Entry, EntryKind, FULL_QUARTERS, MeetingFacts, Participant, ParticipantId, Weight,
 };
