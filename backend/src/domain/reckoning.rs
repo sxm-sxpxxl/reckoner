@@ -56,10 +56,43 @@ pub fn reckon(facts: MeetingFacts) -> Reckoning {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::testing::{expense, participants};
+    use crate::domain::testing::{expense, participants, transfer};
 
     #[test]
-    fn reports_totals_and_status_for_a_meeting_in_progress() {
+    fn reports_zeroes_without_participants() {
+        let reckoning = reckon(MeetingFacts {
+            participants: &[],
+            entries: &[],
+        });
+
+        assert_eq!(reckoning.spent, 0);
+        assert_eq!(reckoning.per_person, 0);
+        assert!(reckoning.settlement.is_empty());
+        assert_eq!(reckoning.status, MeetingStatus::NoParticipants);
+    }
+
+    #[test]
+    fn fixture_bbq_has_participants_but_no_expenses() {
+        // «Солевые шашлыки»: 5 участников, расходов нет — зелёный статус
+        // и нулевая сумма на карточке (скриншот 01-meetings-list.png).
+        let people = participants(5);
+
+        let reckoning = reckon(MeetingFacts {
+            participants: &people,
+            entries: &[],
+        });
+
+        assert_eq!(reckoning.spent, 0);
+        assert_eq!(reckoning.per_person, 0);
+        assert!(reckoning.net.values().all(|balance| *balance == 0));
+        assert!(reckoning.settlement.is_empty());
+        assert_eq!(reckoning.status, MeetingStatus::Settled);
+    }
+
+    #[test]
+    fn fixture_dacha_needs_three_transfers_to_vlad() {
+        // «Дача у Влада» (скриншоты 02 и 03): 13 700 на четверых,
+        // три перевода, все — Владу.
         let people = participants(4);
         let (nastya, vlad, egor, marina) = (people[0], people[1], people[2], people[3]);
         let entries = vec![
@@ -77,36 +110,70 @@ mod tests {
         assert_eq!(reckoning.per_person, 3425);
         assert_eq!(reckoning.contributed[&vlad.id], 8400);
         assert_eq!(reckoning.contributed[&egor.id], 0);
+        assert_eq!(reckoning.net[&nastya.id], -225);
         assert_eq!(reckoning.net[&vlad.id], 4975);
-        assert_eq!(reckoning.settlement.len(), 3);
+        assert_eq!(reckoning.net[&egor.id], -3425);
+        assert_eq!(reckoning.net[&marina.id], -1325);
+        assert_eq!(
+            reckoning.settlement,
+            vec![
+                Transfer {
+                    from: egor.id,
+                    to: vlad.id,
+                    amount: 3425
+                },
+                Transfer {
+                    from: marina.id,
+                    to: vlad.id,
+                    amount: 1325
+                },
+                Transfer {
+                    from: nastya.id,
+                    to: vlad.id,
+                    amount: 225
+                },
+            ]
+        );
         assert_eq!(reckoning.status, MeetingStatus::Alarm(3));
     }
 
     #[test]
-    fn reports_zeroes_without_participants() {
-        let reckoning = reckon(MeetingFacts {
-            participants: &[],
-            entries: &[],
-        });
-
-        assert_eq!(reckoning.spent, 0);
-        assert_eq!(reckoning.per_person, 0);
-        assert!(reckoning.settlement.is_empty());
-        assert_eq!(reckoning.status, MeetingStatus::NoParticipants);
-    }
-
-    #[test]
-    fn meeting_without_expenses_is_settled() {
-        let people = participants(5);
+    fn fixture_kino_still_owes_one_transfer() {
+        // «Кино и шаурма»: расходы 1950 и 1290 на троих (по 1080),
+        // затем три перевода из демо-данных прототипа.
+        //
+        // README хендоффа называет эту встречу закрытой в ноль, но по его же
+        // числам это не так: Егор рассчитался полностью, а между Лёшей З
+        // и Лёшей П остаётся 220.
+        let people = participants(3);
+        let (lesha_p, lesha_z, egor) = (people[0], people[1], people[2]);
+        let entries = vec![
+            expense(lesha_p, 1950),
+            expense(lesha_z, 1290),
+            transfer(egor, lesha_p, 430),
+            transfer(egor, lesha_z, 650),
+            transfer(lesha_z, lesha_p, 220),
+        ];
 
         let reckoning = reckon(MeetingFacts {
             participants: &people,
-            entries: &[],
+            entries: &entries,
         });
 
-        assert_eq!(reckoning.spent, 0);
-        assert_eq!(reckoning.per_person, 0);
-        assert_eq!(reckoning.status, MeetingStatus::Settled);
+        assert_eq!(reckoning.spent, 3240);
+        assert_eq!(reckoning.per_person, 1080);
+        assert_eq!(reckoning.net[&lesha_p.id], 220);
+        assert_eq!(reckoning.net[&lesha_z.id], -220);
+        assert_eq!(reckoning.net[&egor.id], 0);
+        assert_eq!(
+            reckoning.settlement,
+            vec![Transfer {
+                from: lesha_z.id,
+                to: lesha_p.id,
+                amount: 220
+            }]
+        );
+        assert_eq!(reckoning.status, MeetingStatus::Attention(1));
     }
 
     #[test]
