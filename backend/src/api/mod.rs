@@ -6,6 +6,7 @@
 //! к спеке, а не дописать запрос здесь.
 
 pub mod error;
+pub mod meetings;
 pub mod money;
 pub mod texts;
 pub mod view;
@@ -25,12 +26,16 @@ use error::ApiError;
 /// лимит: там мегабайт — норма, и путать эти два лимита нельзя.
 const JSON_BODY_LIMIT: usize = 64 * 1024;
 
+/// Сколько записей лога отдаётся вместе со встречей. Спека: последние 12.
+const LOG_LIMIT: i64 = 12;
+
 /// CORS передаётся снаружи, а не читается здесь из окружения: роутер должен
 /// собираться в тесте без переменных среды, а решение «падать или нет при кривом
 /// `ALLOWED_ORIGIN`» принимает `main`.
 pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
     Router::new()
         .route("/api/health", get(health))
+        .route("/api/meetings/:id", get(meetings::show))
         .layer(DefaultBodyLimit::max(JSON_BODY_LIMIT))
         .layer(cors)
         .with_state(pool)
