@@ -1912,11 +1912,11 @@ async fn main() {
     // `.env` нужен только локально; на Render переменные задаются в панели.
     let _ = dotenvy::dotenv();
 
-    let url = backend::db::database_url().expect("конфигурация базы");
-    let pool = backend::db::connect(&url).await.expect("подключение к базе");
-    backend::db::run_migrations(&pool)
-        .await
-        .expect("миграции");
+    // Падаем на старте, а не отвечаем 500 на каждый запрос: сервер без базы
+    // бесполезен, и лучше это увидеть сразу в логе.
+    let url = or_exit(backend::db::database_url());
+    let pool = or_exit(backend::db::connect(&url).await);
+    or_exit(backend::db::run_migrations(&pool).await);
 
     let cors = CorsLayer::new().allow_origin(Any);
 
@@ -1927,8 +1927,28 @@ async fn main() {
     // ... остальное без изменений
 ```
 
+Обработку ошибок нельзя делать через `expect`, хотя так короче. `expect` печатает ошибку через
+`Debug`, и человек увидел бы `MissingEnv("DATABASE_URL")` вместо написанного для него текста —
+то есть все сообщения `StartupError` оказались бы бесполезны ровно там, где их читают. Проверено:
+с `expect` вывод был `конфигурация базы: MissingEnv("DATABASE_URL")`. Поэтому рядом с `main`:
+
+```rust
+/// Печатает причину и выходит с ненулевым кодом.
+fn or_exit<T>(result: Result<T, backend::db::StartupError>) -> T {
+    match result {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("не удалось запустить сервер: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+```
+
 Заглушка `/api/ws` удаляется вместе с обработчиками `ws_handler` и `handle_socket`: по спеке
-realtime не делаем, а мёртвый эндпоинт вводит в заблуждение. Импорты `extract::ws::*` тоже уходят.
+realtime не делаем, а мёртвый эндпоинт вводит в заблуждение. Импорты `extract::ws::*` тоже уходят,
+и вместе с ними — фича `ws` у axum в `Cargo.toml`: оставленная, она тянула бы в сборку
+`tokio-tungstenite` ради того, чего в приложении нет.
 
 Хендлер `health` теперь получает состояние, но пула не использует — сигнатуру не меняем.
 

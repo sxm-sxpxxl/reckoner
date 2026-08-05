@@ -107,8 +107,8 @@ These are recorded in the spec and will be dealt with as implementation proceeds
 
 - CORS is wide open (`CorsLayer::new().allow_origin(Any)`), which is fine for local development
   and must be narrowed to the deployed frontend's origin before going live.
-- `GET /api/ws` is a WebSocket echo left over from the scaffold. The spec drops realtime updates
-  in favour of refetching, so this endpoint is going away.
+- ~~`GET /api/ws` is a WebSocket echo left over from the scaffold.~~ Removed: the spec drops
+  realtime updates in favour of refetching.
 - The PWA manifest still carries template values (`start_url: '/'`, a blue `theme_color`, the name
   "Reckoner") and the icons are flat-colour placeholders.
 - `axum` and `tower-http` are pinned to 0.7 and 0.5 from scaffold time. Bumping them is optional
