@@ -25,7 +25,9 @@ pub fn expense_shares(entry: &Entry, participants: &[Participant]) -> BTreeMap<P
     );
 
     let mut shares: BTreeMap<ParticipantId, i64> = BTreeMap::new();
-    // Не только оптимизация: этот выход не даёт `total_quarters` стать нулём.
+    // Не только оптимизация: это первая из двух причин, по которым
+    // `total_quarters` не может быть нулём. Вторую — нулевые веса у всех —
+    // закрывает следующая задача.
     if participants.is_empty() {
         return shares;
     }
@@ -51,7 +53,8 @@ pub fn expense_shares(entry: &Entry, participants: &[Participant]) -> BTreeMap<P
 
     // Остаток рублей — тем, у кого дробная часть больше. Убывание по остатку —
     // не косметика: именно оно не даст рублю остатка достаться участнику
-    // с нулевой долей (его остаток всегда 0). При равенстве — по порядку
+    // с нулевой долей (его остаток всегда 0), а рублей остатка всегда строго
+    // меньше, чем участников с ненулевым остатком. При равенстве — по порядку
     // добавления, затем по id, чтобы порядок был полным и результат не зависел
     // от порядка строк, пришедших из базы.
     remainders.sort_by_key(|(participant, remainder)| {
@@ -178,5 +181,33 @@ mod tests {
         assert_eq!(shares[&people[0].id], 57);
         assert_eq!(shares[&people[1].id], 43);
         assert_eq!(shares.values().sum::<i64>(), 100);
+    }
+
+    #[test]
+    fn excluded_participant_never_pays_even_a_remainder_rouble() {
+        let people = participants(3);
+        // 101 на двоих, третий исключён: 51 / 50 / 0.
+        let entry = expense_with_weights(people[0], 101, &[(people[2], 0)]);
+
+        let shares = expense_shares(&entry, &people);
+
+        assert_eq!(shares[&people[2].id], 0);
+        assert_eq!(shares[&people[0].id], 51);
+        assert_eq!(shares[&people[1].id], 50);
+        assert_eq!(shares.values().sum::<i64>(), 101);
+    }
+
+    #[test]
+    fn shares_do_not_depend_on_participant_order() {
+        let people = participants(3);
+        let entry = expense(people[0], 100);
+        let reversed: Vec<Participant> = people.iter().rev().copied().collect();
+
+        // Порядок строк, пришедших из базы, при равных ключах сортировки
+        // не гарантирован — результат не должен от него зависеть.
+        assert_eq!(
+            expense_shares(&entry, &people),
+            expense_shares(&entry, &reversed)
+        );
     }
 }
