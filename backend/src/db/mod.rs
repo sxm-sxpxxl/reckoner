@@ -4,6 +4,8 @@
 //! принимают `&mut PgConnection`, поэтому вызывающий сам решает, нужна ли
 //! транзакция.
 
+pub mod records;
+
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 
