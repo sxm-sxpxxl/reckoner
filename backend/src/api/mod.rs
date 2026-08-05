@@ -8,7 +8,9 @@
 pub mod error;
 pub mod meetings;
 pub mod money;
+pub mod participants;
 pub mod texts;
+pub mod validate;
 pub mod view;
 
 use axum::extract::{DefaultBodyLimit, FromRequest, Request};
@@ -36,6 +38,7 @@ pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/meetings", post(meetings::create))
+        .route("/api/meetings/:id/participants", post(participants::create))
         .route(
             "/api/meetings/:id",
             get(meetings::show)

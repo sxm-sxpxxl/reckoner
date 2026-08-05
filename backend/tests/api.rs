@@ -6,6 +6,7 @@ mod support;
 
 use backend::api::error::ApiError;
 use backend::api::meetings;
+use backend::api::participants;
 use backend::db;
 use backend::db::meetings::NewMeeting;
 use chrono::{NaiveDate, TimeZone, Utc};
@@ -384,4 +385,106 @@ async fn log_returns_twelve_newest_records() {
     assert_eq!(view.log.len(), 12);
     assert_eq!(view.log[0].text, "запись 14");
     assert_eq!(view.log[11].text, "запись 3");
+}
+
+#[tokio::test]
+async fn server_assigns_position_and_colour() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting = meetings::create_meeting(
+        &mut tx,
+        meetings::CreateMeeting {
+            title: "Пустая".to_owned(),
+            description: String::new(),
+            emoji: None,
+            held_on: None,
+        },
+    )
+    .await
+    .expect("создание встречи");
+
+    let view = participants::add_participant(
+        &mut tx,
+        meeting.id,
+        participants::CreateParticipant {
+            name: "  Настя  ".to_owned(),
+            emoji: Some("🦊".to_owned()),
+        },
+    )
+    .await
+    .expect("добавление участника");
+
+    // Имя обрезается по краям, позицию и цвет назначает база.
+    assert_eq!(view.participants[0].name, "Настя");
+    assert_eq!(view.participants[0].emoji, "🦊");
+    assert_eq!(view.participants[0].position, 0);
+    assert_eq!(view.participants[0].color_index, 0);
+    assert_eq!(view.log[0].text, "Настя присоединяется к встрече");
+}
+
+#[tokio::test]
+async fn participant_without_emoji_gets_the_default_one() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, _) = seed_dacha(&mut tx).await;
+
+    let view = participants::add_participant(
+        &mut tx,
+        meeting_id,
+        participants::CreateParticipant {
+            name: "Лёша".to_owned(),
+            emoji: None,
+        },
+    )
+    .await
+    .expect("добавление участника");
+
+    let added = view
+        .participants
+        .iter()
+        .find(|row| row.name == "Лёша")
+        .expect("новый участник в ответе");
+
+    assert_eq!(added.emoji, "🐻");
+}
+
+#[tokio::test]
+async fn blank_participant_name_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let (meeting_id, _) = seed_dacha(&mut tx).await;
+
+    let error = participants::add_participant(
+        &mut tx,
+        meeting_id,
+        participants::CreateParticipant {
+            name: "   ".to_owned(),
+            emoji: None,
+        },
+    )
+    .await
+    .expect_err("пустое имя");
+
+    assert_eq!(validation_field(&error), "name");
+}
+
+#[tokio::test]
+async fn participant_in_a_missing_meeting_is_not_found() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    // Без проверки существования встречи здесь была бы ошибка внешнего ключа,
+    // то есть `500` вместо `404`.
+    let error = participants::add_participant(
+        &mut tx,
+        Uuid::nil(),
+        participants::CreateParticipant {
+            name: "Настя".to_owned(),
+            emoji: None,
+        },
+    )
+    .await
+    .expect_err("несуществующая встреча");
+
+    assert!(matches!(error, ApiError::NotFound), "получено: {error:?}");
 }
