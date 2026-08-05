@@ -1,6 +1,6 @@
 mod support;
 
-use backend::db::entries::{self, NewEntry};
+use backend::db::entries::{self, EntryPatch, NewEntry};
 use backend::db::facts;
 use backend::db::log;
 use backend::db::meetings::{self, MeetingPatch, NewMeeting};
@@ -634,4 +634,160 @@ async fn maps_partial_shares_into_the_domain() {
     assert_eq!(reckoning.net[&ParticipantId(half.id)], -33);
     // Исключённый не платит ничего, в том числе не получает рубль остатка.
     assert_eq!(reckoning.net[&ParticipantId(excluded.id)], 0);
+}
+
+#[tokio::test]
+async fn patches_amount_and_leaves_shares_alone() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("плательщик");
+    let other = participants::insert(&mut tx, meeting_id, "Влад", "🦉")
+        .await
+        .expect("второй");
+
+    let entry = entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Expense,
+            payer_id: payer.id,
+            recipient_id: None,
+            amount_rubles: 1000,
+            description: "опечатка".to_owned(),
+            occurred_at: None,
+            shares: vec![(other.id, 2)],
+        },
+    )
+    .await
+    .expect("вставка");
+
+    let patched = entries::update(
+        &mut tx,
+        entry.id,
+        EntryPatch {
+            amount_rubles: Some(1200),
+            description: Some("Продукты".to_owned()),
+            ..EntryPatch::default()
+        },
+    )
+    .await
+    .expect("правка")
+    .expect("запись существует");
+
+    assert_eq!(patched.amount_rubles, 1200);
+    assert_eq!(patched.description, "Продукты");
+    assert_eq!(patched.payer_id, payer.id);
+
+    // `shares: None` означает «не трогать» — разбивка по долям цела.
+    let shares = entries::shares_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("доли");
+    assert_eq!(shares.len(), 1);
+    assert_eq!(shares[0].weight_quarters, 2);
+}
+
+#[tokio::test]
+async fn replaces_shares_wholesale_when_given() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("плательщик");
+    let second = participants::insert(&mut tx, meeting_id, "Влад", "🦉")
+        .await
+        .expect("второй");
+    let third = participants::insert(&mut tx, meeting_id, "Егор", "🐸")
+        .await
+        .expect("третий");
+
+    let entry = entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Expense,
+            payer_id: payer.id,
+            recipient_id: None,
+            amount_rubles: 900,
+            description: String::new(),
+            occurred_at: None,
+            shares: vec![(second.id, 2)],
+        },
+    )
+    .await
+    .expect("вставка");
+
+    entries::update(
+        &mut tx,
+        entry.id,
+        EntryPatch {
+            shares: Some(vec![(third.id, 0)]),
+            ..EntryPatch::default()
+        },
+    )
+    .await
+    .expect("правка")
+    .expect("запись существует");
+
+    // Прежняя доля второго удалена, а не дополнена новой.
+    let shares = entries::shares_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("доли");
+    assert_eq!(shares.len(), 1);
+    assert_eq!(shares[0].participant_id, third.id);
+    assert_eq!(shares[0].weight_quarters, 0);
+}
+
+#[tokio::test]
+async fn empty_share_list_means_split_equally_again() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("плательщик");
+    let other = participants::insert(&mut tx, meeting_id, "Влад", "🦉")
+        .await
+        .expect("второй");
+
+    let entry = entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Expense,
+            payer_id: payer.id,
+            recipient_id: None,
+            amount_rubles: 500,
+            description: String::new(),
+            occurred_at: None,
+            shares: vec![(other.id, 1)],
+        },
+    )
+    .await
+    .expect("вставка");
+
+    entries::update(
+        &mut tx,
+        entry.id,
+        EntryPatch {
+            shares: Some(Vec::new()),
+            ..EntryPatch::default()
+        },
+    )
+    .await
+    .expect("правка")
+    .expect("запись существует");
+
+    // Пустой список — не то же самое, что `None`: он снимает все неполные доли,
+    // то есть возвращает расход к делению поровну.
+    let shares = entries::shares_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("доли");
+    assert!(shares.is_empty());
 }

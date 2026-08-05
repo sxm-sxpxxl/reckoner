@@ -2174,9 +2174,10 @@ Run: `cd backend && cargo test --test persistence`
 /// Частичная правка записи. `None` в поле означает «не менять».
 ///
 /// `kind` менять нельзя: превращение расхода в перевод — это другая запись,
-/// и в интерфейсе это делается удалением и повторным вводом. Согласованность
-/// `kind` и `recipient_id` при правке получателя обеспечивает слой API, а
-/// последней линией — CHECK в схеме.
+/// и в интерфейсе это делается удалением и повторным вводом. Отсюда же следует,
+/// что получателя нельзя обнулить: у перевода он есть всегда, у расхода его нет
+/// никогда, и раз вид записи неизменен, случая «убрать получателя» не бывает.
+/// Согласованность обеспечивает слой API, а последней линией — CHECK в схеме.
 #[derive(Debug, Clone, Default)]
 pub struct EntryPatch {
     pub payer_id: Option<Uuid>,
@@ -2195,15 +2196,17 @@ pub async fn update(
     id: Uuid,
     patch: EntryPatch,
 ) -> Result<Option<EntryRow>, sqlx::Error> {
-    let row: Option<EntryRow> = sqlx::query_as(&format!(
+    let row: Option<EntryRow> = sqlx::query_as(
         "update entries set \
              payer_id = coalesce($2, payer_id), \
              recipient_id = coalesce($3, recipient_id), \
              amount_rubles = coalesce($4, amount_rubles), \
              description = coalesce($5, description), \
              occurred_at = coalesce($6, occurred_at) \
-         where id = $1 returning {COLUMNS}"
-    ))
+         where id = $1 \
+         returning id, meeting_id, kind, payer_id, recipient_id, \
+                   amount_rubles, description, occurred_at, created_at",
+    )
     .bind(id)
     .bind(patch.payer_id)
     .bind(patch.recipient_id)
@@ -2248,7 +2251,7 @@ pub async fn update(
 
 Run: `cd backend && cargo test --test persistence`
 
-Ожидается: `test result: ok. 19 passed; 0 failed`.
+Ожидается: `test result: ok. 21 passed; 0 failed`.
 
 - [ ] **Step 5: Закоммитить**
 
