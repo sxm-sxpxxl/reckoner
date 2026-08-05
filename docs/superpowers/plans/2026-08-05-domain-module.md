@@ -971,16 +971,21 @@ pub fn contributions(facts: MeetingFacts) -> BTreeMap<ParticipantId, i64> {
         .collect();
 
     for entry in facts.entries {
-        if entry.kind == EntryKind::Expense {
-            if let Some(sum) = paid.get_mut(&entry.payer_id) {
-                *sum += entry.amount;
-            }
+        if entry.kind == EntryKind::Expense
+            && let Some(sum) = paid.get_mut(&entry.payer_id)
+        {
+            *sum += entry.amount;
         }
     }
 
     paid
 }
 ```
+
+Про let-chain в условии: вложенные `if` и `if let` тут писать нельзя — в edition 2024 let-chains
+стабильны, и clippy требует их через `collapsible_if`, а сборка идёт с `-D warnings`. Форма выше —
+дословно то, что предлагает сам clippy, и она короткозамкнута так же: `get_mut` вызывается только
+когда запись оказалась расходом.
 
 Дописать `EntryKind` в импорт:
 
@@ -1000,6 +1005,13 @@ Run: `cd backend && cargo test --lib balance`
 git add backend/src/domain/balance.rs backend/src/domain/mod.rs
 git commit -m "feat(domain): sum expenses paid by each participant"
 ```
+
+> По итогам ревью этого таска добавляются ещё две мелочи, реализованные вместе с Task 7, потому что
+> он правит тот же файл: вторая строка док-комментария про гарантию «каждый участник присутствует,
+> неплательщик получает 0» (именно ради неё карта предзаполняется нулями) и третий тест, где один
+> участник и платит расход, и отправляет перевод. Без последнего два правила — накопление и
+> исключение переводов — ни в одном тесте не встречаются, хотя правило существует ровно для этого
+> случая.
 
 ---
 
@@ -1173,10 +1185,12 @@ pub fn net_balances(facts: MeetingFacts) -> BTreeMap<ParticipantId, i64> {
                 }
             }
             EntryKind::Transfer => {
-                if let Some(recipient) = entry.recipient_id {
-                    if let Some(balance) = net.get_mut(&recipient) {
-                        *balance -= entry.amount;
-                    }
+                // Вложенные `if let` тут не пройдут clippy::collapsible_if —
+                // в edition 2024 нужен let-chain.
+                if let Some(recipient) = entry.recipient_id
+                    && let Some(balance) = net.get_mut(&recipient)
+                {
+                    *balance -= entry.amount;
                 }
             }
         }
