@@ -192,6 +192,7 @@ participants
   color_index   smallint not null                   -- индекс в палитре аватаров
   position      integer  not null                    -- порядок добавления
   created_at    timestamptz not null default now()
+  unique (meeting_id, position)
 
 entries
   id              uuid    primary key default gen_random_uuid()
@@ -219,8 +220,18 @@ meeting_log
   created_at   timestamptz not null default now()
 ```
 
-Индексы: `participants(meeting_id)`, `entries(meeting_id, occurred_at desc)`,
-`meeting_log(meeting_id, created_at desc)`.
+Индексы: `entries(meeting_id, occurred_at desc)`, `meeting_log(meeting_id, created_at desc)`.
+Отдельный индекс по `participants(meeting_id)` не нужен — его роль выполняет уникальный индекс
+по `(meeting_id, position)`.
+
+Про `unique (meeting_id, position)`. Ограничение не косметическое: `position` участвует в
+тай-брейке при раздаче остатка рублей (см. «Расчёт долей»), и если два участника одной встречи
+получат одинаковый `position`, результат начнёт зависеть от порядка строк, который Postgres при
+равных ключах сортировки не гарантирует — два одинаковых запроса могли бы показать, что лишний
+рубль платят разные люди. Домен со своей стороны тоже подстрахован (третий ключ сортировки — `id`),
+но полагаться на это как на единственную защиту неправильно. `position` присваивается при вставке
+как число уже существующих участников, поэтому удаления оставляют дырки в нумерации — это
+нормально и конфликтов с ограничением не создаёт.
 
 Каскады реализуют требование хендоффа «удаление участника удаляет и все записи, где он
 плательщик или получатель»: `on delete cascade` на `payer_id` и на `recipient_id`.
