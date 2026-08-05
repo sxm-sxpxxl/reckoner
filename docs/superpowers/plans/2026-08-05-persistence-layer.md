@@ -56,9 +56,14 @@ compile-time константы со списком колонок) был бы 
 из нескольких запросов (запись расхода вместе с долями и строкой лога), вызывающий открывает
 транзакцию и передаёт `&mut *tx`.
 
-**`position` присваивается как число уже существующих участников.** Поэтому удаления оставляют дырки
-в нумерации — это нормально. Уникальность `(meeting_id, position)` от этого не страдает, а тай-брейк
-при раздаче остатка рублей остаётся однозначным.
+**`position` присваивается как `max(position) + 1` по встрече.** Не как число уже существующих
+участников — это была ошибка в первой редакции плана, и она ломала бы приложение. Счётчик по
+количеству после удаления кого-то из середины выдаёт уже занятый номер: двое получили 0 и 1,
+первого удалили, `count(*)` стал 1, и следующий участник претендует на позицию 1, которая занята.
+Проверено на живой базе — Postgres отвечает `duplicate key value violates unique constraint
+"participants_meeting_id_position_key"`, то есть добавление участника падало бы после любого
+удаления. Монотонный счётчик оставляет дырки в нумерации; они безобидны, потому что важен только
+порядок, а не плотность, и тай-брейк при раздаче остатка рублей остаётся однозначным.
 
 ## Структура файлов
 
@@ -1015,17 +1020,31 @@ async fn position_keeps_growing_after_a_deletion() {
     participants::insert(&mut tx, meeting_id, "Два", "🦊")
         .await
         .expect("второй");
-    participants::delete(&mut tx, first.id).await.expect("удаление");
+    participants::delete(&mut tx, first.id)
+        .await
+        .expect("удаление");
 
-    // Позиция считается как число уже существующих участников, поэтому после
-    // удаления остаётся один — и новый получает position 1, а не 2. С уникальным
-    // индексом (meeting_id, position) это не конфликтует: позиция 1 свободна.
+    // Номер берётся как max(position) + 1, поэтому третий получает 2, а не 1.
+    // Счётчик по числу существующих участников выдал бы здесь 1 — уже занятый
+    // «Два» номер — и вставка упала бы на уникальном индексе. Дырка на месте
+    // удалённого остаётся навсегда, и это правильно.
     let third = participants::insert(&mut tx, meeting_id, "Три", "🐸")
         .await
         .expect("третий");
-    assert_eq!(third.position, 1);
+    assert_eq!(third.position, 2);
+
+    let positions: Vec<i32> = participants::list_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("список")
+        .iter()
+        .map(|row| row.position)
+        .collect();
+    assert_eq!(positions, [1, 2]);
 }
 ```
+
+Тест назван `position_never_reuses_a_number_after_a_deletion`: он про то, что номер не переиспользуется,
+а не про то, что нумерация плотная.
 
 - [ ] **Step 2: Запустить и убедиться, что не компилируется**
 
@@ -1043,42 +1062,54 @@ use uuid::Uuid;
 
 use super::records::ParticipantRow;
 
-/// Размер палитры аватаров из дизайна. Цвет не хранится, хранится индекс.
+/// Размер палитры аватаров из дизайна. Цвет не хранится, хранится индекс:
+/// сами цвета знает фронтенд. Передаётся в запрос параметром, а не подставляется
+/// в текст, чтобы значение осталось единственным.
 const PALETTE_SIZE: i64 = 8;
 
-const COLUMNS: &str =
-    "id, meeting_id, name, emoji, color_index, position, created_at";
-
 /// `position` и `color_index` присваивает база, а не вызывающий: они зависят от
-/// того, сколько участников уже есть, и считать это на стороне приложения
-/// значило бы гонку между двумя одновременными добавлениями.
+/// того, что уже есть в таблице, и считать это на стороне приложения значило бы
+/// гонку между двумя одновременными добавлениями.
+///
+/// Номер берётся как `max(position) + 1`, а не как число существующих
+/// участников. Разница принципиальная: после удаления кого-то из середины
+/// счётчик по количеству выдал бы уже занятый номер и упёрся в уникальный
+/// индекс `(meeting_id, position)`. Монотонный счётчик оставляет дырки
+/// в нумерации — это безобидно, а вот столкновение сломало бы добавление
+/// участника после любого удаления.
 pub async fn insert(
     conn: &mut PgConnection,
     meeting_id: Uuid,
     name: &str,
     emoji: &str,
 ) -> Result<ParticipantRow, sqlx::Error> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(
         "insert into participants (meeting_id, name, emoji, color_index, position) \
-         select $1, $2, $3, count(*) % {PALETTE_SIZE}, count(*) \
-         from participants where meeting_id = $1 \
-         returning {COLUMNS}"
-    ))
+         select $1, $2, $3, (next.value % $4)::smallint, next.value::int \
+         from ( \
+             select coalesce(max(position), -1) + 1 as value \
+             from participants where meeting_id = $1 \
+         ) as next \
+         returning id, meeting_id, name, emoji, color_index, position, created_at",
+    )
     .bind(meeting_id)
     .bind(name)
     .bind(emoji)
+    .bind(PALETTE_SIZE)
     .fetch_one(conn)
     .await
 }
 
-/// Порядок по `position` — тот же, что использует домен для тай-брейка.
+/// Порядок по `position` — тот же, что использует домен для тай-брейка при
+/// раздаче остатка рублей.
 pub async fn list_for_meeting(
     conn: &mut PgConnection,
     meeting_id: Uuid,
 ) -> Result<Vec<ParticipantRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
-        "select {COLUMNS} from participants where meeting_id = $1 order by position"
-    ))
+    sqlx::query_as(
+        "select id, meeting_id, name, emoji, color_index, position, created_at \
+         from participants where meeting_id = $1 order by position",
+    )
     .bind(meeting_id)
     .fetch_all(conn)
     .await
@@ -1092,9 +1123,10 @@ pub async fn update(
     name: &str,
     emoji: &str,
 ) -> Result<Option<ParticipantRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
-        "update participants set name = $2, emoji = $3 where id = $1 returning {COLUMNS}"
-    ))
+    sqlx::query_as(
+        "update participants set name = $2, emoji = $3 where id = $1 \
+         returning id, meeting_id, name, emoji, color_index, position, created_at",
+    )
     .bind(id)
     .bind(name)
     .bind(emoji)

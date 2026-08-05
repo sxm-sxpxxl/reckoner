@@ -5,6 +5,7 @@
 //! транзакция.
 
 pub mod meetings;
+pub mod participants;
 pub mod records;
 
 use sqlx::PgPool;
