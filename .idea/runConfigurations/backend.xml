@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="backend" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+    <option name="command" value="run" />
+    <option name="workingDirectory" value="file://$PROJECT_DIR$/backend" />
+    <option name="emulateTerminal" value="true" />
+    <envs />
+    <method v="2" />
+  </configuration>
+</component>
