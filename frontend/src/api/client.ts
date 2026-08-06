@@ -54,7 +54,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (response.status === 204) return undefined as T
 
   const text = await response.text()
-  const body: unknown = text ? JSON.parse(text) : null
+  let body: unknown = null
+
+  if (text) {
+    try {
+      body = JSON.parse(text)
+    } catch {
+      // Наше API отвечает JSON всегда, на любой ошибке. Текст в теле означает,
+      // что отвечали не мы: так выглядит край Render, пока инстанс
+      // просыпается, — `404 Not Found` с `text/plain` и заголовком
+      // `x-render-routing: no-server`. Раньше `JSON.parse` здесь просто падал,
+      // и наружу летел SyntaxError вместо понятной ошибки.
+      throw new ApiError(response.status, 'upstream', 'Сервер ещё просыпается')
+    }
+  }
 
   if (!response.ok) {
     const error = (body ?? {}) as Partial<ApiErrorBody>

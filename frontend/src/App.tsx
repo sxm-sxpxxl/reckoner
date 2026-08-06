@@ -18,13 +18,19 @@ const queryClient = new QueryClient({
       // за это время встречу мог поменять друг.
       refetchOnWindowFocus: true,
       staleTime: 30_000,
-      // Повторяем только то, что имеет смысл повторять. На `404` встречи нет
-      // и не появится, на `422` тело не станет валиднее — повтор лишь удваивает
-      // ожидание, и человек всё это время смотрит на пустой скелет вместо
-      // «встреча не найдена».
       retry: (failureCount, error) => {
-        if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-          return false
+        if (error instanceof ApiError) {
+          // Ответ не от нашего API: спящий Render отдаёт 404 своим краем,
+          // сеть могла не дойти. Это как раз тот случай, когда повтор нужен,
+          // и не один: холодный старт занимает до минуты.
+          if (error.kind === 'upstream' || error.kind === 'network') {
+            return failureCount < 6
+          }
+
+          // А вот свои 4xx повторять бессмысленно: встречи нет и не появится,
+          // тело не станет валиднее. Повтор лишь удваивает ожидание, и человек
+          // смотрит на пустой экран вместо «встреча не найдена».
+          if (error.status >= 400 && error.status < 500) return false
         }
 
         return failureCount < 1
