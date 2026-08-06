@@ -1,0 +1,30 @@
+.panel {
+  background: var(--ok-panel);
+  border: 1.5px solid var(--ok-border);
+  border-radius: var(--r-panel);
+  padding: 34px 24px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.emoji {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ok-text);
+}
+
+.note {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-2);
+  max-width: 34ch;
+  text-wrap: pretty;
+}

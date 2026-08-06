@@ -16,6 +16,11 @@ const FULL_QUARTERS = 4
 /** Доли по идентификатору участника. Отсутствие ключа — полная доля. */
 export type Quarters = Record<string, number>
 
+/** Цикл по клику на чип доли: 1 → ¾ → ½ → ¼ → 0 → 1, как в хендоффе. */
+export function nextQuarters(current: number): number {
+  return current === 0 ? FULL_QUARTERS : current - 1
+}
+
 export function previewShares(
   amount: number,
   /** Участники в порядке `position` — он и есть тай-брейк при раздаче остатка. */

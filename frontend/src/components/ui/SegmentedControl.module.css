@@ -1,0 +1,33 @@
+.control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: rgba(22, 21, 15, 0.07);
+}
+
+.segment {
+  border: none;
+  background: none;
+  padding: 7px 14px;
+  min-height: 34px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segment:hover {
+  color: var(--ink);
+}
+
+.active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.active:hover {
+  color: #fff;
+}

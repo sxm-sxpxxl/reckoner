@@ -1,0 +1,26 @@
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  letter-spacing: -0.025em;
+}
+
+.empty {
+  background: var(--surface);
+  border-radius: var(--r-panel);
+  padding: 34px 24px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--text-2);
+  box-shadow: var(--shadow-card);
+}

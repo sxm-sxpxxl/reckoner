@@ -1,0 +1,99 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 0;
+}
+
+.row:not(:last-child) {
+  border-bottom: 1px solid var(--divider);
+}
+
+/* Основная часть строки — кнопка: по клику открывается правка записи.
+   Внутри только phrasing content (span'ы), потому что div внутри button
+   недопустим. */
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 0 12px 13px;
+  border: none;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--r-input);
+}
+
+.main:hover {
+  background: rgba(22, 21, 15, 0.03);
+}
+
+.body {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.who {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right {
+  display: block;
+  flex: none;
+  text-align: right;
+}
+
+.amount {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.time {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.remove {
+  flex: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #cfc9bb;
+  font-size: 14px;
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.remove:hover {
+  color: var(--debt);
+}
+
+.remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
