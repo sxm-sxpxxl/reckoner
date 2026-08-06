@@ -4,6 +4,64 @@
   font-weight: 700;
 }
 
+/* Строка «кто заплатил»: селект тянется, сумма фиксированной ширины,
+   кнопка удаления не сжимается. */
+.payerRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.payerRow select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.payerAmount {
+  flex: 0 0 108px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.dropPayer {
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #cfc9bb;
+  font-size: 14px;
+}
+
+.dropPayer:hover {
+  color: var(--debt);
+}
+
+.addPayer {
+  align-self: start;
+  border: none;
+  background: none;
+  padding: 6px 0;
+  min-height: 40px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--link);
+}
+
+.addPayer:hover {
+  color: var(--ink);
+}
+
+.payerTotal {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+
 .sharesHead {
   display: flex;
   align-items: baseline;
