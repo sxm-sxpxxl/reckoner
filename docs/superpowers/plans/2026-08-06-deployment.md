@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Приложение живёт в интернете: фронтенд на GitHub Pages, бэкенд на Render, база — бранч `main` в Neon. Деплой автоматический с `master`.
+**Goal:** Приложение живёт в интернете: фронтенд на GitHub Pages, бэкенд на Render, база — бранч `production` в Neon. Деплой автоматический с `master`.
 
 **Architecture:** Три части на трёх бесплатных хостингах, связанные тремя переменными: `VITE_API_BASE_URL` (фронт знает адрес API), `ALLOWED_ORIGIN` (бэкенд знает, кого пускать), `DATABASE_URL` (бэкенд знает базу). Ошибка в любой из них ломает связь целиком, поэтому каждая проверяется отдельно.
 
@@ -178,7 +178,7 @@ services:
 
 ### Task 6: Что делает пользователь
 
-Инструкция в `docs/setup-deploy.md`: бранч `main` в Neon, сервис на Render, включение Pages,
+Инструкция в `docs/setup-deploy.md`: бранч `production` в Neon, сервис на Render, включение Pages,
 repo variable, порядок первого запуска (сначала Render — узнать адрес API, потом Pages
 с этим адресом, потом `ALLOWED_ORIGIN` с адресом Pages).
 
