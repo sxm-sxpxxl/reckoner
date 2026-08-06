@@ -1,0 +1,91 @@
+/* Токены дизайна. Перенесены один-в-один из docs/design/handoff.md, раздел
+   «Design Tokens». Менять значения здесь — значит расходиться с хендоффом,
+   поэтому любое отличие должно быть сначала внесено туда. */
+
+:root {
+  /* Поверхности */
+  --bg: #f2eee5;
+  --surface: #ffffff;
+  --surface-2: #fbf9f4;
+
+  /* Текст */
+  --ink: #16150f;
+  --text-2: #6c6759;
+  --text-3: #8b8577;
+  --text-muted: #a9a395;
+  --text-description: #4b4739;
+
+  /* Линии */
+  --divider: rgba(22, 21, 15, 0.07);
+  --border: rgba(22, 21, 15, 0.1);
+  --border-strong: rgba(22, 21, 15, 0.16);
+
+  /* Акцент */
+  --accent: #e04a22;
+  --accent-hover: #c93f1b;
+  --accent-shadow: #a8320f;
+  --link: #d6431b;
+
+  /* Статусы */
+  --ok-text: #25693e;
+  --ok-bg: #dff0e3;
+  --ok-panel: #eaf6ec;
+  --ok-border: #9bc9a6;
+  --ok-accent: #2e7d4f;
+  --warn-text: #8a6403;
+  --warn-bg: #fbefc9;
+  --warn-border: #e0c067;
+  --alarm-text: #a6301d;
+  --alarm-bg: #fbded6;
+  --alarm-border: #e09e8e;
+
+  /* Долги */
+  --debt: #c3402e;
+  --debt-cell-bg: #fcf1ee;
+  --cell-empty: #d6d0c2;
+
+  /* Чипы */
+  --chip-partial-bg: #fff3e4;
+  --chip-partial-border: #e8a25e;
+  --chip-picked-bg: #ffe3d6;
+  --chip-picked-border: #e04a22;
+
+  /* Радиусы */
+  --r-pill: 999px;
+  --r-modal: 22px;
+  --r-card: 20px;
+  --r-panel: 18px;
+  --r-tile: 16px;
+  --r-stat: 14px;
+  --r-input: 12px;
+  --r-logo: 11px;
+
+  /* Тени */
+  --shadow-card: 0 1px 2px rgba(22, 21, 15, 0.05);
+  --shadow-card-hover: 0 10px 26px rgba(22, 21, 15, 0.1);
+  --shadow-modal: 0 24px 60px rgba(22, 21, 15, 0.3);
+  --shadow-primary: 0 2px 0 var(--accent-shadow);
+
+  /* Шрифты */
+  --font-ui: 'Onest', system-ui, sans-serif;
+  --font-display: 'Unbounded', var(--font-ui);
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Раскладка */
+  --container: 1180px;
+  --container-pad: 28px;
+}
+
+/* Палитра аватаров: цвет кружка по `colorIndex`, который назначает база.
+   Восемь значений — ровно столько, сколько PALETTE_SIZE в db/participants.rs;
+   разойдутся — часть участников останется без цвета. */
+:root {
+  --avatar-0: #ffd9c2;
+  --avatar-1: #d8e9dc;
+  --avatar-2: #e3dcf3;
+  --avatar-3: #fbe7a8;
+  --avatar-4: #cfe4f2;
+  --avatar-5: #f5d2de;
+  --avatar-6: #dce7c8;
+  --avatar-7: #eadccb;
+}

@@ -4,6 +4,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // GitHub Pages отдаёт сайт из подпапки репозитория. Ставится сразу, а не
+  // перед деплоем: иначе пришлось бы переписывать все пути к ассетам и ссылки
+  // роутера. Дев-сервер после этого живёт на /reckoner/ — как и прод.
+  base: '/reckoner/',
   plugins: [
     react(),
     VitePWA({
@@ -12,13 +16,16 @@ export default defineConfig({
         enabled: true,
       },
       manifest: {
-        name: 'Reckoner',
-        short_name: 'Reckoner',
+        name: 'Фонд встреч',
+        short_name: 'Фонд встреч',
         display: 'standalone',
-        start_url: '/',
-        background_color: '#ffffff',
-        theme_color: '#1e64c8',
+        start_url: '/reckoner/',
+        scope: '/reckoner/',
+        background_color: '#F2EEE5',
+        theme_color: '#F2EEE5',
         icons: [
+          // Плейсхолдеры из шаблона. Настоящие иконки со знаком «Ф» — задача
+          // этапа PWA перед деплоем.
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',
