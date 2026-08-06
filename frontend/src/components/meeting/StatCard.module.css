@@ -1,0 +1,21 @@
+.card {
+  background: var(--surface);
+  border-radius: var(--r-stat);
+  padding: 11px 15px;
+  min-width: 120px;
+}
+
+.label {
+  font-size: 11.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+
+.value {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 700;
+}

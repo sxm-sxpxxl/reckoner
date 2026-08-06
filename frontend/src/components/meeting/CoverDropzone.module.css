@@ -1,0 +1,34 @@
+.zone {
+  min-height: 214px;
+  border-radius: var(--r-modal);
+  border: 1.5px dashed rgba(22, 21, 15, 0.2);
+  background: var(--surface-2);
+  background-size: cover;
+  background-position: center;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.filled {
+  border-style: solid;
+  border-color: var(--border);
+}
+
+.emoji {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.title {
+  margin: 8px 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}

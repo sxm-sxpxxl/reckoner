@@ -2,8 +2,10 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { ApiError } from '../../api/client'
-import { useCreateMeeting } from '../../api/meetings'
+import { useCreateMeeting, useDeleteMeeting, useUpdateMeeting } from '../../api/meetings'
+import type { Meeting } from '../../api/types'
 import Button from '../ui/Button'
+import ConfirmDelete from './ConfirmDelete'
 import Modal from './Modal'
 import styles from './MeetingFormModal.module.css'
 
@@ -16,41 +18,83 @@ function today(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-export default function MeetingFormModal({ onClose }: { onClose: () => void }) {
+/**
+ * Форма встречи: одна и та же на создание и на правку.
+ *
+ * Правка — наше добавление к хендоффу: там встреча всегда рождается с эмодзи ✨,
+ * и поменять его, название или дату негде.
+ */
+export default function MeetingFormModal({
+  meeting,
+  onClose,
+}: {
+  meeting?: Meeting
+  onClose: () => void
+}) {
   const navigate = useNavigate()
   const create = useCreateMeeting()
+  const update = useUpdateMeeting(meeting?.id ?? '')
+  const remove = useDeleteMeeting()
 
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [emoji, setEmoji] = useState('✨')
-  const [heldOn, setHeldOn] = useState(today())
+  const [title, setTitle] = useState(meeting?.title ?? '')
+  const [description, setDescription] = useState(meeting?.description ?? '')
+  const [emoji, setEmoji] = useState(meeting?.emoji ?? '✨')
+  const [heldOn, setHeldOn] = useState(meeting?.heldOn ?? today())
+  const [confirming, setConfirming] = useState(false)
 
-  const error = create.error instanceof ApiError ? create.error : null
+  const pending = create.isPending || update.isPending
+  const failure = create.error ?? update.error
+  const error = failure instanceof ApiError ? failure : null
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
 
+    if (meeting) {
+      update.mutate({ title, description, emoji, heldOn }, { onSuccess: onClose })
+
+      return
+    }
+
     create.mutate(
       { title, description, emoji, heldOn },
-      {
-        // Как в хендоффе: созданная встреча сразу открывается.
-        onSuccess: (meeting) => navigate(`/meetings/${meeting.id}`),
-      },
+      // Как в хендоффе: созданная встреча сразу открывается.
+      { onSuccess: (created) => navigate(`/meetings/${created.id}`) },
+    )
+  }
+
+  if (confirming && meeting) {
+    return (
+      <ConfirmDelete
+        title="Удалить встречу?"
+        text="Исчезнут все участники, расходы и переводы. Отменить это будет нельзя."
+        loading={remove.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() =>
+          remove.mutate(meeting.id, {
+            onSuccess: () => navigate('/'),
+          })
+        }
+      />
     )
   }
 
   return (
     <Modal
-      title="Новая встреча"
+      title={meeting ? 'Встреча' : 'Новая встреча'}
       onClose={onClose}
       footer={
         <>
+          {meeting && (
+            <Button type="button" variant="danger" onClick={() => setConfirming(true)}>
+              Удалить
+            </Button>
+          )}
           <span className={styles.footSpacer} />
           <Button type="button" onClick={onClose}>
             Отмена
           </Button>
-          <Button type="submit" form="meeting-form" variant="primary" loading={create.isPending}>
-            Создать
+          <Button type="submit" form="meeting-form" variant="primary" loading={pending}>
+            {meeting ? 'Сохранить' : 'Создать'}
           </Button>
         </>
       }

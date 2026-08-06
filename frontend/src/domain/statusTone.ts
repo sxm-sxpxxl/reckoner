@@ -39,3 +39,17 @@ export const STATUS_TONES: Record<MeetingStatus, StatusTone> = {
     border: 'var(--border)',
   },
 }
+
+/**
+ * Подпись бейджа на странице встречи.
+ *
+ * На карточке списка она короче — «Осталось 3», здесь «Осталось переводов: 3».
+ * Так на скриншотах 01 и 02: подпись зависит от места, поэтому живёт отдельно
+ * от `STATUS_TONES.label`, а цвета у них общие.
+ */
+export function pageStatusLabel(status: MeetingStatus, pendingTransfers: number): string {
+  if (status === 'settled') return 'Все в расчёте'
+  if (status === 'no-participants') return 'Нет участников'
+
+  return `Осталось переводов: ${pendingTransfers}`
+}

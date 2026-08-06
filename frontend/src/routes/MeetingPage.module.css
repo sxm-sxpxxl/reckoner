@@ -1,0 +1,39 @@
+.page {
+  padding-bottom: 60px;
+  animation: fadeIn 200ms ease;
+}
+
+.state {
+  margin-top: 34px;
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+}
+
+.stateText {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-2);
+}
+
+.skeleton {
+  margin-top: 34px;
+  height: 214px;
+  border-radius: var(--r-modal);
+  background: var(--surface-2);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.columns {
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 22px;
+  align-items: start;
+}
