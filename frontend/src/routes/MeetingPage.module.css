@@ -33,5 +33,5 @@
    а не `both`: `both` после конца анимации продолжает держать `transform`
    и ломает наведение у вложенных карточек. */
 .appear {
-  animation: riseIn 260ms ease backwards;
+  animation: riseIn 420ms ease backwards;
 }

@@ -14,7 +14,7 @@
      `transform: none`, а анимация в каскаде сильнее обычных правил — подъём
      при наведении просто не срабатывал. `backwards` нужен из-за задержки:
      без него карточка до своей очереди была бы видна в конечном виде. */
-  animation: riseIn 240ms ease backwards;
+  animation: riseIn 380ms ease backwards;
 }
 
 .card:hover {

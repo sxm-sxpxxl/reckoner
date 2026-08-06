@@ -10,7 +10,7 @@
      `transform: none`, а анимация в каскаде сильнее обычных правил — подъём
      при наведении просто не срабатывал. `backwards` нужен из-за задержки:
      без него карточка до своей очереди была бы видна в конечном виде. */
-  animation: riseIn 200ms ease backwards;
+  animation: riseIn 340ms ease backwards;
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease;
@@ -60,3 +60,12 @@
 .edit:hover {
   color: var(--ink);
 }
+
+/* Каскад внутри сетки. Через `nth-child`, а не через `animationDelay` в
+   разметке: карточке незачем знать свой номер ради одной анимации. */
+.card:nth-child(2) { animation-delay: 60ms; }
+.card:nth-child(3) { animation-delay: 120ms; }
+.card:nth-child(4) { animation-delay: 180ms; }
+.card:nth-child(5) { animation-delay: 240ms; }
+.card:nth-child(6) { animation-delay: 300ms; }
+.card:nth-child(n + 7) { animation-delay: 360ms; }
