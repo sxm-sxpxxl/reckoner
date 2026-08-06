@@ -1,0 +1,28 @@
+.empty {
+  border: 1.5px dashed rgba(22, 21, 15, 0.18);
+  border-radius: var(--r-card);
+  padding: 56px 24px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.emoji {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  letter-spacing: -0.025em;
+}
+
+.note {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--text-2);
+}

@@ -1,0 +1,67 @@
+.page {
+  padding-bottom: 60px;
+  animation: fadeIn 200ms ease;
+}
+
+.intro {
+  margin-top: 34px;
+}
+
+.h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(30px, 4vw, 44px);
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.lead {
+  margin: 14px 0 0;
+  font-size: 16px;
+  color: var(--text-2);
+  max-width: 46ch;
+  text-wrap: pretty;
+}
+
+.grid {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.skeleton {
+  height: 196px;
+  border-radius: var(--r-card);
+  background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
+  background-size: 220% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 180% 0;
+  }
+
+  to {
+    background-position: -20% 0;
+  }
+}
+
+.error {
+  margin-top: 22px;
+  padding: 24px;
+  border-radius: var(--r-card);
+  border: 1.5px solid var(--alarm-border);
+  background: var(--alarm-bg);
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.errorText {
+  margin: 0;
+  color: var(--alarm-text);
+  font-weight: 600;
+}
