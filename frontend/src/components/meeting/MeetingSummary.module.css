@@ -34,12 +34,6 @@
   color: var(--text-3);
 }
 
-.titleRow {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
 .title {
   margin: 0;
   font-family: var(--font-display);
@@ -49,20 +43,9 @@
   line-height: 1.05;
 }
 
+/* Прижата к правому краю строки со статусом и датой. */
 .edit {
-  flex: none;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 16px;
-  padding: 8px;
-  min-width: 40px;
-  min-height: 40px;
-}
-
-.edit:hover {
-  color: var(--ink);
+  margin-left: auto;
 }
 
 .description {

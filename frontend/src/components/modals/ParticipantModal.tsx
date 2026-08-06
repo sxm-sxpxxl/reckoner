@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { ApiError } from '../../api/client'
 import { useAddParticipant, useRemoveParticipant, useUpdateParticipant } from '../../api/meetings'
 import type { Participant } from '../../api/types'
-import { AVATAR_EMOJI } from '../../domain/avatars'
+import { AVATAR_EMOJI } from '../../domain/emoji'
 import Button from '../ui/Button'
 import EmojiPicker from '../ui/EmojiPicker'
 import ConfirmDelete from './ConfirmDelete'
@@ -96,7 +96,12 @@ export default function ParticipantModal({
 
         <div className={styles.field}>
           <span className={styles.label}>Аватар</span>
-          <EmojiPicker value={emoji} onChange={setEmoji} />
+          <EmojiPicker
+            options={AVATAR_EMOJI}
+            value={emoji}
+            onChange={setEmoji}
+            label="Аватар участника"
+          />
         </div>
 
         {error && <p className={styles.error}>{error.humanMessage}</p>}

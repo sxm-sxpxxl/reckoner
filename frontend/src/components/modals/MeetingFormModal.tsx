@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import { useCreateMeeting, useDeleteMeeting, useUpdateMeeting } from '../../api/meetings'
 import type { Meeting } from '../../api/types'
+import { MEETING_EMOJI } from '../../domain/emoji'
 import Button from '../ui/Button'
+import EmojiPicker from '../ui/EmojiPicker'
 import ConfirmDelete from './ConfirmDelete'
 import Modal from './Modal'
 import styles from './MeetingFormModal.module.css'
@@ -100,31 +102,27 @@ export default function MeetingFormModal({
       }
     >
       <form id="meeting-form" className={styles.form} onSubmit={submit}>
-        <div className={styles.row}>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="meeting-title">
-              Название
-            </label>
-            <input
-              id="meeting-title"
-              className={`${styles.input} ${error?.field === 'title' ? styles.invalid : ''}`}
-              value={title}
-              placeholder="Новая встреча"
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </div>
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="meeting-title">
+            Название
+          </label>
+          <input
+            id="meeting-title"
+            className={`${styles.input} ${error?.field === 'title' ? styles.invalid : ''}`}
+            value={title}
+            placeholder="Новая встреча"
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </div>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="meeting-emoji">
-              Эмодзи
-            </label>
-            <input
-              id="meeting-emoji"
-              className={`${styles.input} ${styles.emojiInput}`}
-              value={emoji}
-              onChange={(event) => setEmoji(event.target.value)}
-            />
-          </div>
+        <div className={styles.field}>
+          <span className={styles.label}>Эмодзи</span>
+          <EmojiPicker
+            options={MEETING_EMOJI}
+            value={emoji}
+            onChange={setEmoji}
+            label="Эмодзи встречи"
+          />
         </div>
 
         <div className={styles.field}>

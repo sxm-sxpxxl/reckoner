@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
+import { ApiError } from './api/client'
 import { useServerWake } from './api/health'
 import WakeScreen from './components/layout/WakeScreen'
 import MeetingPage from './routes/MeetingPage'
@@ -14,7 +15,17 @@ const queryClient = new QueryClient({
       // за это время встречу мог поменять друг.
       refetchOnWindowFocus: true,
       staleTime: 30_000,
-      retry: 1,
+      // Повторяем только то, что имеет смысл повторять. На `404` встречи нет
+      // и не появится, на `422` тело не станет валиднее — повтор лишь удваивает
+      // ожидание, и человек всё это время смотрит на пустой скелет вместо
+      // «встреча не найдена».
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+          return false
+        }
+
+        return failureCount < 1
+      },
     },
   },
 })

@@ -40,23 +40,8 @@
   color: var(--debt);
 }
 
-.row {
-  display: flex;
-  gap: 10px;
-}
-
-.row > .field:first-child {
-  flex: 1 1 auto;
-}
-
 /* Отжимает «Отмена» и «Создать» вправо: слева в подвале живёт «Удалить»,
    которой у создания нет. */
 .footSpacer {
   margin-left: auto;
-}
-
-.emojiInput {
-  width: 76px;
-  text-align: center;
-  font-size: 19px;
 }

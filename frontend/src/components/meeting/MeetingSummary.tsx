@@ -1,6 +1,7 @@
 import type { Meeting } from '../../api/types'
 import { formatCardDate, formatRubles } from '../../domain/format'
 import { STATUS_TONES, pageStatusLabel } from '../../domain/statusTone'
+import Button from '../ui/Button'
 import CoverDropzone from './CoverDropzone'
 import StatCard from './StatCard'
 import styles from './MeetingSummary.module.css'
@@ -32,20 +33,15 @@ export default function MeetingSummary({
             {pageStatusLabel(meeting.status, meeting.totals.pendingTransfers)}
           </span>
           <span className={styles.date}>{formatCardDate(meeting.heldOn)}</span>
+
+          {/* Кнопка с подписью, а не бледный карандаш у заголовка: правка
+              встречи — не редкая операция, и её надо видеть, не наводя мышь. */}
+          <Button size="small" onClick={onEdit} className={styles.edit}>
+            ✎ Изменить
+          </Button>
         </div>
 
-        <div className={styles.titleRow}>
-          <h1 className={styles.title}>{meeting.title}</h1>
-          <button
-            type="button"
-            className={styles.edit}
-            onClick={onEdit}
-            aria-label="Редактировать встречу"
-            title="Редактировать встречу"
-          >
-            ✎
-          </button>
-        </div>
+        <h1 className={styles.title}>{meeting.title}</h1>
 
         {meeting.description && <p className={styles.description}>{meeting.description}</p>}
 
