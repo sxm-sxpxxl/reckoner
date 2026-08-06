@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import type { SortMode } from '../api/types'
 import AppHeader from '../components/layout/AppHeader'
 import Container from '../components/layout/Container'
+import Loader from '../components/ui/Loader'
 import MeetingCard from '../components/meetings/MeetingCard'
 import MeetingFilters from '../components/meetings/MeetingFilters'
 import MeetingsEmpty from '../components/meetings/MeetingsEmpty'
@@ -79,13 +80,7 @@ export default function MeetingsListPage() {
           names={names}
         />
 
-        {meetings.isPending && (
-          <div className={styles.grid}>
-            {[0, 1, 2].map((index) => (
-              <div key={index} className={styles.skeleton} />
-            ))}
-          </div>
-        )}
+        {meetings.isPending && <Loader label="Ищем встречи" />}
 
         {meetings.isError && (
           <div className={styles.error}>

@@ -34,24 +34,6 @@
   gap: 18px;
 }
 
-.skeleton {
-  height: 196px;
-  border-radius: var(--r-card);
-  background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
-  background-size: 220% 100%;
-  animation: shimmer 1.2s linear infinite;
-}
-
-@keyframes shimmer {
-  from {
-    background-position: 180% 0;
-  }
-
-  to {
-    background-position: -20% 0;
-  }
-}
-
 .error {
   margin-top: 22px;
   padding: 24px;

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import ThemeToggle from './ThemeToggle'
 import styles from './AppHeader.module.css'
 
 interface AppHeaderProps {
@@ -19,7 +20,10 @@ export default function AppHeader({ action }: AppHeaderProps) {
           </span>
           <span className={styles.wordmark}>Финальная расплата</span>
         </Link>
-        {action}
+        <div className={styles.right}>
+          <ThemeToggle />
+          {action}
+        </div>
       </div>
     </header>
   )

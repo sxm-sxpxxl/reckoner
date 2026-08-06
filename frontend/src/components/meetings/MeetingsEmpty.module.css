@@ -1,4 +1,7 @@
 .empty {
+  /* Тот же отступ, что у сетки карточек: без него пунктирная рамка
+     прилипает к строке поиска. */
+  margin-top: 22px;
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--r-card);
   padding: 56px 24px;

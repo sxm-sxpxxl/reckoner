@@ -18,7 +18,9 @@
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 12px 0 12px 13px;
+  /* Правый отступ обязателен: без него фон подсветки обрывается ровно
+     по краю суммы и даты, и наведение выглядит обрезанным. */
+  padding: 12px 12px 12px 13px;
   border: none;
   background: none;
   text-align: left;

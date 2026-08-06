@@ -61,14 +61,21 @@ function buildLoop(): Note[] {
 
   BASS.forEach((bar, barIndex) => {
     bar.forEach((hz, beatIndex) => {
+      const at = barIndex * BAR + beatIndex * BEAT
+
       notes.push({
         hz,
-        at: barIndex * BAR + beatIndex * BEAT,
+        at,
         hold: BEAT * 0.7,
         gain: 0.5,
         // Пила даёт «щипок», похожий на сурф-гитару шпионских тем.
         type: 'sawtooth',
       })
+
+      // Тот же бас октавой выше и тише. Без него на ноутбучных динамиках тему
+      // почти не слышно: они срезают всё ниже примерно 200 Гц, а корень
+      // басовой линии — 110 Гц.
+      notes.push({ hz: hz * 2, at, hold: BEAT * 0.7, gain: 0.22, type: 'sawtooth' })
     })
   })
 
@@ -100,6 +107,12 @@ let context: AudioContext | null = null
 let master: GainNode | null = null
 let timer: number | null = null
 let nextLoopAt = 0
+
+/** Счётчик запусков. `startTheme` асинхронный, а `stopTheme` — нет, поэтому
+ *  остановка успевает обогнать ещё не завершившийся старт: в StrictMode React
+ *  монтирует эффект дважды и гасит первый до того, как тот доработал. Без этой
+ *  проверки старый вызов после `await` оживал и оставлял вечный таймер. */
+let generation = 0
 
 function scheduleLoop(from: number) {
   if (!context || !master) return
@@ -151,6 +164,7 @@ export async function startTheme(): Promise<boolean> {
 
   if (!Ctor) return false
 
+  const mine = generation
   const created = new Ctor()
 
   if (created.state === 'suspended') {
@@ -171,10 +185,19 @@ export async function startTheme(): Promise<boolean> {
     return false
   }
 
+  // Пока мы ждали `resume`, могла прийти остановка — тогда этот контекст уже
+  // никому не нужен.
+  if (mine !== generation) {
+    await created.close()
+
+    return false
+  }
+
   context = created
   master = created.createGain()
-  // Тихо: это фон, под ним считают деньги.
-  master.gain.value = 0.07
+  // Фон, под ним считают деньги, — но 0.07 давало пик −36 дБ, то есть тишину
+  // на встроенных динамиках. Замерено анализатором, а не на слух.
+  master.gain.value = 0.34
   master.connect(created.destination)
 
   nextLoopAt = created.currentTime + 0.1
@@ -185,6 +208,8 @@ export async function startTheme(): Promise<boolean> {
 }
 
 export function stopTheme(): void {
+  generation += 1
+
   if (timer !== null) {
     window.clearInterval(timer)
     timer = null

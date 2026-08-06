@@ -16,6 +16,7 @@ import MeetingFormModal from '../components/modals/MeetingFormModal'
 import ParticipantModal from '../components/modals/ParticipantModal'
 import TransferModal from '../components/modals/TransferModal'
 import Button from '../components/ui/Button'
+import Loader from '../components/ui/Loader'
 import styles from './MeetingPage.module.css'
 
 /** Какая модалка открыта. Одно состояние вместо флага на каждую: двух модалок
@@ -49,7 +50,7 @@ export default function MeetingPage() {
       <div className={styles.page}>
         {header}
         <Container>
-          <div className={styles.skeleton} />
+          <Loader label="Открываем встречу" />
         </Container>
       </div>
     )

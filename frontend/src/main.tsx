@@ -23,6 +23,10 @@ import '@fontsource/jetbrains-mono/latin-700.css'
 import './styles/tokens.css'
 import './styles/base.css'
 import App from './App'
+import { applyTheme, readTheme } from './domain/theme'
+
+// До рендера: иначе выбравший светлую тему видел бы вспышку тёмной.
+applyTheme(readTheme())
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
