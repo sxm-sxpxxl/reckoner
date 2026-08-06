@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { ApiError } from './api/client'
 import { useServerWake } from './api/health'
+import { playSting } from './domain/sting'
 import WakeScreen from './components/layout/WakeScreen'
 import MeetingPage from './routes/MeetingPage'
 import MeetingsListPage from './routes/MeetingsListPage'
@@ -30,8 +32,32 @@ const queryClient = new QueryClient({
   },
 })
 
+/**
+ * Играет приветственный сигнал на первое действие пользователя.
+ *
+ * Не на загрузку страницы: браузеры не дают воспроизводить звук до жеста, и
+ * «звук при открытии» просто не сработал бы. Первый клик или нажатие клавиши —
+ * ближайший к открытию момент, когда это разрешено.
+ */
+function useWelcomeSting() {
+  useEffect(() => {
+    const fire = () => void playSting()
+
+    // `once` — сигнал один на загрузку страницы, а не на каждый клик.
+    window.addEventListener('pointerdown', fire, { once: true })
+    window.addEventListener('keydown', fire, { once: true })
+
+    return () => {
+      window.removeEventListener('pointerdown', fire)
+      window.removeEventListener('keydown', fire)
+    }
+  }, [])
+}
+
 function Shell() {
   const wake = useServerWake()
+
+  useWelcomeSting()
 
   // Экран пробуждения показываем только пока сервер молчит дольше секунды-двух.
   if (wake === 'slow') return <WakeScreen />

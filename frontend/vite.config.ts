@@ -16,8 +16,10 @@ export default defineConfig({
         enabled: true,
       },
       manifest: {
-        name: 'Фонд встреч',
-        short_name: 'Фонд встреч',
+        name: 'Финальная расплата',
+        // Короткое имя подписывает иконку на домашнем экране, и места там
+        // на 12 символов: полное название система обрежет многоточием.
+        short_name: 'Расплата',
         display: 'standalone',
         start_url: '/reckoner/',
         scope: '/reckoner/',

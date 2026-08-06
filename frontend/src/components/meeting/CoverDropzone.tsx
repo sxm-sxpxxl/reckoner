@@ -2,6 +2,7 @@ import { useRef, useState, type DragEvent } from 'react'
 
 import { ApiError } from '../../api/client'
 import { useRemoveCover, useUploadCover } from '../../api/meetings'
+import { coverGradient } from '../../domain/cover'
 import { ImageError, compressImage } from '../../domain/imageFile'
 import Button from '../ui/Button'
 import styles from './CoverDropzone.module.css'
@@ -73,11 +74,12 @@ export default function CoverDropzone({
       ]
         .filter(Boolean)
         .join(' ')}
-      style={
-        hasCover
-          ? { backgroundImage: `url(/api/meetings/${meetingId}/cover?v=${coverVersion})` }
-          : undefined
-      }
+      style={{
+        // Без обложки — та же заглушка, что у карточки этой встречи в списке.
+        background: hasCover
+          ? `center/cover url(/api/meetings/${meetingId}/cover?v=${coverVersion})`
+          : coverGradient(meetingId),
+      }}
       // Зона ведёт себя как кнопка: иначе обложку нельзя поставить
       // с клавиатуры вообще.
       role="button"

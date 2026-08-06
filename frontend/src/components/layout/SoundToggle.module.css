@@ -1,0 +1,21 @@
+.toggle {
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: none;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.toggle:hover {
+  background: rgba(22, 21, 15, 0.06);
+  opacity: 1;
+}
+
+.toggle[aria-pressed='true'] {
+  opacity: 1;
+}

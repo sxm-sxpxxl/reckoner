@@ -23,6 +23,14 @@
   gap: 10px;
   text-decoration: none;
   color: inherit;
+  min-width: 0;
+}
+
+.right {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .mark {
@@ -39,9 +47,15 @@
   place-items: center;
 }
 
+/* «Финальная расплата» вдвое длиннее прежнего названия, а справа теперь ещё
+   и звук. На узком экране подпись обрезается, а не выдавливает кнопки:
+   медиазапросов в дизайне нет, и заводить их ради этого не нужно. */
 .wordmark {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 17px;
   letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

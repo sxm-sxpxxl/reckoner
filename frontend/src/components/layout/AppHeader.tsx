@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import SoundToggle from './SoundToggle'
 import styles from './AppHeader.module.css'
 
 interface AppHeaderProps {
@@ -17,9 +18,12 @@ export default function AppHeader({ action }: AppHeaderProps) {
           <span className={styles.mark} aria-hidden="true">
             Ф
           </span>
-          <span className={styles.wordmark}>Фонд встреч</span>
+          <span className={styles.wordmark}>Финальная расплата</span>
         </Link>
-        {action}
+        <div className={styles.right}>
+          <SoundToggle />
+          {action}
+        </div>
       </div>
     </header>
   )

@@ -1,9 +1,11 @@
+/* Фон — та же обложка, что у карточки этой встречи в списке: страница
+   и список не должны показывать разные картинки. Поэтому и текст здесь
+   светлый, поверх тёмного. */
 .zone {
   position: relative;
   min-height: 214px;
   border-radius: var(--r-modal);
-  border: 1.5px dashed rgba(22, 21, 15, 0.2);
-  background: var(--surface-2);
+  border: 1.5px dashed rgba(255, 255, 255, 0.28);
   background-size: cover;
   background-position: center;
   display: grid;
@@ -13,23 +15,24 @@
   cursor: pointer;
   transition:
     border-color 0.15s ease,
-    background-color 0.15s ease;
+    box-shadow 0.15s ease;
 }
 
 .zone:hover {
-  border-color: var(--border-strong);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 /* Файл над зоной. Подсветка обязательна: без неё непонятно, попадёт ли
    отпущенный файл именно сюда. */
 .dragging {
   border-color: var(--accent);
-  background-color: var(--chip-picked-bg);
+  border-style: solid;
+  box-shadow: inset 0 0 0 3px rgba(224, 74, 34, 0.35);
 }
 
 .filled {
   border-style: solid;
-  border-color: var(--border);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .hiddenInput {
@@ -45,19 +48,21 @@
   margin: 8px 0 2px;
   font-size: 14px;
   font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
 }
 
 .note {
   margin: 0;
   font-size: 12.5px;
-  color: var(--text-2);
+  color: rgba(255, 255, 255, 0.62);
 }
 
+/* Светлее `--debt`: на почти чёрном фоне тот тёмно-красный не читается. */
 .error {
   margin: 8px 0 0;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--debt);
+  color: #ff9b86;
   text-wrap: pretty;
 }
 
@@ -76,7 +81,8 @@
   display: grid;
   place-items: center;
   border-radius: var(--r-modal);
-  background: rgba(251, 249, 244, 0.72);
+  background: rgba(12, 13, 15, 0.72);
+  color: rgba(255, 255, 255, 0.94);
   font-size: 13.5px;
   font-weight: 600;
 }
