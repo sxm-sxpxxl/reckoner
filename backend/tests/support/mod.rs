@@ -2,6 +2,7 @@
 //! откатывается при выходе, поэтому тесты не видят друг друга и не оставляют
 //! мусора — чистить ничего не нужно.
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use sqlx::{PgPool, postgres::PgPoolOptions};
@@ -45,16 +46,93 @@ pub async fn test_pool() -> PgPool {
     // случалось дольше десяти секунд. С десятисекундным таймаутом прогон падал
     // на `PoolTimedOut` в самом `connect` — то есть проверка ломалась там, где
     // база всего лишь медленно отвечала.
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .acquire_timeout(Duration::from_secs(60))
-        .connect(&url)
-        .await
-        .expect("не удалось подключиться к тестовой базе");
+    ensure_migrated(&url);
 
-    backend::db::run_migrations(&pool)
-        .await
-        .expect("не удалось применить миграции к тестовой базе");
+    connect_with_retry(&url).await
+}
 
-    pool
+/// Сколько раз пробуем подключиться, прежде чем признать это провалом.
+const CONNECT_ATTEMPTS: u32 = 5;
+
+/// Подключение с повтором.
+///
+/// Бесплатный compute Neon — 0.25 CU, и под несколькими одновременными
+/// подключениями он их просто рвёт: `peer closed connection without sending
+/// TLS close_notify`. Это не ошибка в коде и не медленная база — это упор
+/// в квоту, и лечится он повтором, а не увеличением таймаута: таймаут ждёт
+/// ответа на живом соединении, а здесь соединение закрыто.
+///
+/// Повтор именно здесь, а не в самом приложении: серверу хватает пула на пять
+/// соединений, он не открывает по одному на запрос и в это не упирается.
+async fn connect_with_retry(url: &str) -> PgPool {
+    let mut last_error = None;
+
+    for attempt in 1..=CONNECT_ATTEMPTS {
+        let result = PgPoolOptions::new()
+            .max_connections(2)
+            // Таймаут щедрый: спящий compute Neon просыпается секунды, и под
+            // нагрузкой первое соединение случалось дольше десяти секунд.
+            .acquire_timeout(Duration::from_secs(60))
+            .connect(url)
+            .await;
+
+        match result {
+            Ok(pool) => return pool,
+            Err(error) => {
+                last_error = Some(error);
+
+                if attempt < CONNECT_ATTEMPTS {
+                    // Пауза растёт: если компьют занят, немедленный повтор
+                    // упрётся в то же самое.
+                    tokio::time::sleep(Duration::from_millis(400 * u64::from(attempt))).await;
+                }
+            }
+        }
+    }
+
+    panic!(
+        "не удалось подключиться к тестовой базе за {CONNECT_ATTEMPTS} попыток: {:?}",
+        last_error.expect("причина последней попытки")
+    );
+}
+
+/// Миграции — один раз на процесс, а не на каждый тест.
+///
+/// Раньше их прогонял каждый `test_pool`, то есть по разу на тест. На
+/// бесплатном compute Neon (0.25 CU) это упирало прогон в лимит: тесты падали
+/// вразнобой с `ConnectionReset` на самих миграциях и `PoolTimedOut` на
+/// открытии транзакции, причём каждый раз в разных. Схема между тестами
+/// не меняется, поэтому применять её повторно незачем.
+///
+/// Работа идёт в отдельном потоке со своим рантаймом, а не на рантайме
+/// вызывающего теста: иначе второй тест, дождавшийся первого, мог бы остаться
+/// с наполовину погашенным рантаймом — `#[tokio::test]` гасит свой по выходу.
+fn ensure_migrated(url: &str) {
+    static MIGRATED: OnceLock<()> = OnceLock::new();
+
+    MIGRATED.get_or_init(|| {
+        let url = url.to_owned();
+
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("рантайм для миграций");
+
+            runtime.block_on(async {
+                let pool = PgPoolOptions::new()
+                    .max_connections(1)
+                    .acquire_timeout(Duration::from_secs(60))
+                    .connect(&url)
+                    .await
+                    .expect("не удалось подключиться к тестовой базе");
+
+                backend::db::run_migrations(&pool)
+                    .await
+                    .expect("не удалось применить миграции к тестовой базе");
+            });
+        })
+        .join()
+        .expect("поток миграций упал");
+    });
 }

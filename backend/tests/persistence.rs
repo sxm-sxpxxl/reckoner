@@ -1,5 +1,6 @@
 mod support;
 
+use backend::db::covers;
 use backend::db::entries::{self, EntryPatch, NewEntry};
 use backend::db::facts;
 use backend::db::log;
@@ -889,4 +890,110 @@ async fn treats_wildcards_in_the_query_as_plain_text() {
         "процент сработал как шаблон: {:?}",
         wildcard.iter().map(|row| &row.title).collect::<Vec<_>>()
     );
+}
+
+#[tokio::test]
+async fn stores_a_cover_and_bumps_the_version() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let version = covers::store(&mut tx, meeting_id, "image/png", b"\x89PNG\r\n\x1a\nfake")
+        .await
+        .expect("запись обложки")
+        .expect("встреча существует");
+
+    // Версия уходит в query-параметр картинки: без её роста браузер отдавал бы
+    // из кэша прежнюю обложку.
+    assert_eq!(version, 1);
+
+    let again = covers::store(&mut tx, meeting_id, "image/jpeg", b"\xFF\xD8\xFFfake")
+        .await
+        .expect("замена обложки")
+        .expect("встреча существует");
+
+    assert_eq!(again, 2);
+}
+
+#[tokio::test]
+async fn reads_back_the_cover_bytes_and_mime() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+    let bytes = b"\x89PNG\r\n\x1a\nsome-bytes".to_vec();
+
+    covers::store(&mut tx, meeting_id, "image/png", &bytes)
+        .await
+        .expect("запись обложки");
+
+    let cover = covers::load(&mut tx, meeting_id)
+        .await
+        .expect("чтение обложки")
+        .expect("обложка есть");
+
+    assert_eq!(cover.mime, "image/png");
+    assert_eq!(cover.bytes, bytes);
+    assert_eq!(cover.version, 1);
+}
+
+#[tokio::test]
+async fn meeting_without_a_cover_has_none() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    assert!(
+        covers::load(&mut tx, meeting_id)
+            .await
+            .expect("чтение обложки")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn clearing_a_cover_keeps_the_version() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+    let meeting_id = seed_meeting(&mut tx).await;
+    covers::store(&mut tx, meeting_id, "image/png", b"\x89PNG\r\n\x1a\nfake")
+        .await
+        .expect("запись обложки");
+
+    let cleared = covers::clear(&mut tx, meeting_id)
+        .await
+        .expect("снятие обложки");
+
+    assert!(cleared);
+    assert!(
+        covers::load(&mut tx, meeting_id)
+            .await
+            .expect("чтение обложки")
+            .is_none()
+    );
+
+    // Версию не сбрасываем: иначе прежний URL `?v=1` снова стал бы
+    // действительным, и браузер отдал бы из кэша картинку, которой уже нет.
+    let row = meetings::find(&mut tx, meeting_id)
+        .await
+        .expect("чтение встречи")
+        .expect("встреча есть");
+
+    assert_eq!(row.cover_version, 1);
+}
+
+#[tokio::test]
+async fn storing_a_cover_for_a_missing_meeting_reports_none() {
+    let pool = test_pool().await;
+    let mut tx = pool.begin().await.expect("транзакция");
+
+    let stored = covers::store(
+        &mut tx,
+        uuid::Uuid::nil(),
+        "image/png",
+        b"\x89PNG\r\n\x1a\n",
+    )
+    .await
+    .expect("запрос выполнен");
+
+    assert!(stored.is_none());
 }

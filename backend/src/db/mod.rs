@@ -4,6 +4,7 @@
 //! принимают `&mut PgConnection`, поэтому вызывающий сам решает, нужна ли
 //! транзакция.
 
+pub mod covers;
 pub mod entries;
 pub mod facts;
 pub mod log;
