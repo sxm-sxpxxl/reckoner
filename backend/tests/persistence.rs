@@ -30,7 +30,7 @@ async fn seed_meeting(tx: &mut sqlx::PgConnection) -> uuid::Uuid {
 #[tokio::test]
 async fn migrations_apply_and_schema_is_queryable() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     // Пять таблиц схемы должны существовать после миграций.
     let tables: Vec<String> = sqlx::query_scalar(
@@ -59,7 +59,7 @@ async fn migrations_apply_and_schema_is_queryable() {
 #[tokio::test]
 async fn entry_kind_round_trips_through_a_text_column() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     // Отображение перечисления на колонку `text` — то место, где компиляция
     // ничего не доказывает. Строки обязаны совпадать со значениями в CHECK
@@ -87,7 +87,7 @@ async fn entry_kind_round_trips_through_a_text_column() {
 #[tokio::test]
 async fn inserts_and_reads_back_a_meeting() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let created = meetings::insert(
         &mut tx,
@@ -118,7 +118,7 @@ async fn inserts_and_reads_back_a_meeting() {
 #[tokio::test]
 async fn returns_none_for_a_missing_meeting() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let found = meetings::find(&mut tx, uuid::Uuid::nil())
         .await
@@ -130,7 +130,7 @@ async fn returns_none_for_a_missing_meeting() {
 #[tokio::test]
 async fn patches_only_provided_fields() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let created = meetings::insert(
         &mut tx,
@@ -169,7 +169,7 @@ async fn patches_only_provided_fields() {
 #[tokio::test]
 async fn deletes_a_meeting_and_reports_whether_it_existed() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let created = meetings::insert(
         &mut tx,
@@ -204,7 +204,7 @@ async fn deletes_a_meeting_and_reports_whether_it_existed() {
 #[tokio::test]
 async fn assigns_position_and_color_by_order_of_addition() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let first = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
@@ -224,7 +224,7 @@ async fn assigns_position_and_color_by_order_of_addition() {
 #[tokio::test]
 async fn lists_participants_in_position_order() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     for (name, emoji) in [("Настя", "🦊"), ("Влад", "🦉"), ("Егор", "🐸")] {
@@ -244,7 +244,7 @@ async fn lists_participants_in_position_order() {
 #[tokio::test]
 async fn updates_and_deletes_a_participant() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let person = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
@@ -277,7 +277,7 @@ async fn updates_and_deletes_a_participant() {
 #[tokio::test]
 async fn position_never_reuses_a_number_after_a_deletion() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let first = participants::insert(&mut tx, meeting_id, "Раз", "🐻")
@@ -311,7 +311,7 @@ async fn position_never_reuses_a_number_after_a_deletion() {
 #[tokio::test]
 async fn stores_an_expense_with_partial_shares() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
@@ -352,7 +352,7 @@ async fn stores_an_expense_with_partial_shares() {
 #[tokio::test]
 async fn stores_a_transfer() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let from = participants::insert(&mut tx, meeting_id, "Егор", "🐸")
@@ -387,7 +387,7 @@ async fn rejects_a_self_transfer() {
     let pool = test_pool().await;
     // Отдельная транзакция: нарушение CHECK переводит транзакцию Postgres
     // в сбойное состояние, и все последующие запросы в ней тоже упали бы.
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let person = participants::insert(&mut tx, meeting_id, "Егор", "🐸")
@@ -417,7 +417,7 @@ async fn rejects_a_self_transfer() {
 #[tokio::test]
 async fn deleting_a_participant_removes_their_entries() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
@@ -474,7 +474,7 @@ async fn deleting_a_participant_removes_their_entries() {
 #[tokio::test]
 async fn lists_entries_newest_first() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
     let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
         .await
@@ -517,7 +517,7 @@ async fn lists_entries_newest_first() {
 #[tokio::test]
 async fn keeps_the_newest_log_records_within_the_limit() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     for index in 0..5 {
@@ -540,7 +540,7 @@ async fn keeps_the_newest_log_records_within_the_limit() {
 #[tokio::test]
 async fn reckons_the_dacha_meeting_from_stored_rows() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let nastya = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
@@ -593,7 +593,7 @@ async fn reckons_the_dacha_meeting_from_stored_rows() {
 #[tokio::test]
 async fn maps_partial_shares_into_the_domain() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let payer = participants::insert(&mut tx, meeting_id, "Раз", "🐻")
@@ -640,7 +640,7 @@ async fn maps_partial_shares_into_the_domain() {
 #[tokio::test]
 async fn patches_amount_and_leaves_shares_alone() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
@@ -694,7 +694,7 @@ async fn patches_amount_and_leaves_shares_alone() {
 #[tokio::test]
 async fn replaces_shares_wholesale_when_given() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
@@ -747,7 +747,7 @@ async fn replaces_shares_wholesale_when_given() {
 #[tokio::test]
 async fn empty_share_list_means_split_equally_again() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
@@ -793,15 +793,27 @@ async fn empty_share_list_means_split_equally_again() {
     assert!(shares.is_empty());
 }
 
+/// Уникальная метка на прогон.
+///
+/// Список читает всю таблицу, а бранч `test` не обязан быть пустым: тесты
+/// уровня HTTP (`tests/http.rs`) коммитят встречи и убирают их за собой,
+/// но упавший тест оставляет свою. Поэтому фильтры проверяются на метке,
+/// а не на «во всей базе ровно две встречи» — иначе тест ломался бы от чужого
+/// мусора, а не от ошибки в запросе.
+fn marker() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
+
 #[tokio::test]
 async fn filters_meetings_by_query_and_participant() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
+    let tag = marker();
 
     let bbq = meetings::insert(
         &mut tx,
         NewMeeting {
-            title: "Солевые шашлыки".to_owned(),
+            title: format!("Солевые шашлыки {tag}"),
             description: "Выехали на озеро с мангалом".to_owned(),
             emoji: "🔥".to_owned(),
             held_on: NaiveDate::from_ymd_opt(2026, 8, 3).expect("дата"),
@@ -813,8 +825,8 @@ async fn filters_meetings_by_query_and_participant() {
     let dacha = meetings::insert(
         &mut tx,
         NewMeeting {
-            title: "Дача у Влада".to_owned(),
-            description: "Баня и продукты".to_owned(),
+            title: format!("Дача у Влада {tag}"),
+            description: format!("Баняипродукты{tag}"),
             emoji: "🏡".to_owned(),
             held_on: NaiveDate::from_ymd_opt(2026, 7, 23).expect("дата"),
         },
@@ -822,42 +834,46 @@ async fn filters_meetings_by_query_and_participant() {
     .await
     .expect("дача");
 
-    participants::insert(&mut tx, bbq.id, "Настя", "🦊")
+    // Имена тоже с меткой: фильтр по участнику сравнивает имя целиком,
+    // и одноимённый Влад из другой встречи попал бы в выдачу.
+    let vlad = format!("Влад {tag}");
+    participants::insert(&mut tx, bbq.id, &format!("Настя {tag}"), "🦊")
         .await
         .expect("участник шашлыков");
-    participants::insert(&mut tx, dacha.id, "Влад", "🦉")
+    participants::insert(&mut tx, dacha.id, &vlad, "🦉")
         .await
         .expect("участник дачи");
 
-    // Без фильтров — обе, новые сверху по дате встречи.
-    let all = meetings::list_filtered(&mut tx, None, None)
+    // По метке — обе, новые сверху по дате встречи.
+    let all = meetings::list_filtered(&mut tx, Some(&tag), None)
         .await
         .expect("список");
-    let titles: Vec<&str> = all.iter().map(|row| row.title.as_str()).collect();
-    assert_eq!(titles, ["Солевые шашлыки", "Дача у Влада"]);
+    let ids: Vec<uuid::Uuid> = all.iter().map(|row| row.id).collect();
+    assert_eq!(ids, [bbq.id, dacha.id]);
 
     // Поиск идёт и по названию, и по описанию, регистр не важен.
-    let by_title = meetings::list_filtered(&mut tx, Some("ШАШЛЫК"), None)
+    let by_title = meetings::list_filtered(&mut tx, Some(&format!("ШАШЛЫКИ {tag}")), None)
         .await
         .expect("поиск по названию");
     assert_eq!(by_title.len(), 1);
     assert_eq!(by_title[0].id, bbq.id);
 
-    let by_description = meetings::list_filtered(&mut tx, Some("баня"), None)
-        .await
-        .expect("поиск по описанию");
+    let by_description =
+        meetings::list_filtered(&mut tx, Some(&format!("баняипродукты{tag}")), None)
+            .await
+            .expect("поиск по описанию");
     assert_eq!(by_description.len(), 1);
     assert_eq!(by_description[0].id, dacha.id);
 
     // Фильтр по участнику: встреча попадает в выдачу, если такой участник в ней есть.
-    let by_participant = meetings::list_filtered(&mut tx, None, Some("Влад"))
+    let by_participant = meetings::list_filtered(&mut tx, None, Some(&vlad))
         .await
         .expect("фильтр по участнику");
     assert_eq!(by_participant.len(), 1);
     assert_eq!(by_participant[0].id, dacha.id);
 
     // Фильтры складываются, а не заменяют друг друга.
-    let both = meetings::list_filtered(&mut tx, Some("шашлык"), Some("Влад"))
+    let both = meetings::list_filtered(&mut tx, Some("шашлык"), Some(&vlad))
         .await
         .expect("оба фильтра");
     assert!(both.is_empty());
@@ -866,12 +882,13 @@ async fn filters_meetings_by_query_and_participant() {
 #[tokio::test]
 async fn treats_wildcards_in_the_query_as_plain_text() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
+    let tag = marker();
 
-    meetings::insert(
+    let dacha = meetings::insert(
         &mut tx,
         NewMeeting {
-            title: "Дача у Влада".to_owned(),
+            title: format!("Дача у Влада {tag}"),
             description: String::new(),
             emoji: "🏡".to_owned(),
             held_on: NaiveDate::from_ymd_opt(2026, 7, 23).expect("дата"),
@@ -880,13 +897,17 @@ async fn treats_wildcards_in_the_query_as_plain_text() {
     .await
     .expect("дача");
 
-    // Символ `%` приходит от пользователя и обязан остаться данными. Если бы
-    // шаблон склеивался в текст запроса, такой поиск нашёл бы всё подряд.
+    // Символ `%` приходит от пользователя и обязан остаться данными.
+    //
+    // Проверяем не пустоту всей выдачи, а отсутствие именно нашей встречи:
+    // будь `%` шаблоном, она нашлась бы первой. Так тест не зависит от того,
+    // что ещё лежит в бранче `test`.
     let wildcard = meetings::list_filtered(&mut tx, Some("%"), None)
         .await
         .expect("поиск по проценту");
+
     assert!(
-        wildcard.is_empty(),
+        !wildcard.iter().any(|row| row.id == dacha.id),
         "процент сработал как шаблон: {:?}",
         wildcard.iter().map(|row| &row.title).collect::<Vec<_>>()
     );
@@ -895,7 +916,7 @@ async fn treats_wildcards_in_the_query_as_plain_text() {
 #[tokio::test]
 async fn stores_a_cover_and_bumps_the_version() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     let version = covers::store(&mut tx, meeting_id, "image/png", b"\x89PNG\r\n\x1a\nfake")
@@ -918,7 +939,7 @@ async fn stores_a_cover_and_bumps_the_version() {
 #[tokio::test]
 async fn reads_back_the_cover_bytes_and_mime() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
     let bytes = b"\x89PNG\r\n\x1a\nsome-bytes".to_vec();
 
@@ -939,7 +960,7 @@ async fn reads_back_the_cover_bytes_and_mime() {
 #[tokio::test]
 async fn meeting_without_a_cover_has_none() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
 
     assert!(
@@ -953,7 +974,7 @@ async fn meeting_without_a_cover_has_none() {
 #[tokio::test]
 async fn clearing_a_cover_keeps_the_version() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
     covers::store(&mut tx, meeting_id, "image/png", b"\x89PNG\r\n\x1a\nfake")
         .await
@@ -984,7 +1005,7 @@ async fn clearing_a_cover_keeps_the_version() {
 #[tokio::test]
 async fn storing_a_cover_for_a_missing_meeting_reports_none() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let stored = covers::store(
         &mut tx,

@@ -54,6 +54,43 @@ pub async fn test_pool() -> PgPool {
 /// Сколько раз пробуем подключиться, прежде чем признать это провалом.
 const CONNECT_ATTEMPTS: u32 = 5;
 
+/// Транзакция с повтором.
+///
+/// Единственное, на чём прогон ещё срывался после повтора подключения, — это
+/// само `pool.begin()`: бесплатный compute Neon рвёт соединение из пула, и
+/// первая же попытка его взять отдаёт `PoolTimedOut` или закрытый TLS.
+///
+/// Повторять здесь безопасно, потому что до открытия транзакции ничего
+/// не произошло: ни данных, ни блокировок. Повторять сами запросы было бы
+/// нельзя — там уже есть состояние, и тест проверял бы не то, что задумано.
+///
+/// `allow(dead_code)`, потому что каждый тестовый бинарник компилирует этот
+/// модуль отдельно, а `tests/http.rs` транзакциями не пользуется вовсе: он
+/// ходит через роутер и убирает за собой запросами. Без атрибута сборка `http`
+/// падала бы на `-D warnings`.
+#[allow(dead_code)]
+pub async fn begin(pool: &PgPool) -> sqlx::Transaction<'static, sqlx::Postgres> {
+    let mut last_error = None;
+
+    for attempt in 1..=CONNECT_ATTEMPTS {
+        match pool.begin().await {
+            Ok(tx) => return tx,
+            Err(error) => {
+                last_error = Some(error);
+
+                if attempt < CONNECT_ATTEMPTS {
+                    tokio::time::sleep(Duration::from_millis(400 * u64::from(attempt))).await;
+                }
+            }
+        }
+    }
+
+    panic!(
+        "не удалось открыть транзакцию за {CONNECT_ATTEMPTS} попыток: {:?}",
+        last_error.expect("причина последней попытки")
+    );
+}
+
 /// Подключение с повтором.
 ///
 /// Бесплатный compute Neon — 0.25 CU, и под несколькими одновременными

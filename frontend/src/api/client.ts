@@ -40,7 +40,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(BASE + path, {
       ...init,
-      headers: init?.body ? { 'content-type': 'application/json' } : undefined,
+      // Заголовок из `init` важнее: у обложки тело — блоб, и подставить ему
+      // `application/json` значило бы соврать о типе. JSON-методы своего
+      // заголовка не передают, поэтому им достаётся значение по умолчанию.
+      headers: init?.headers ?? (init?.body ? { 'content-type': 'application/json' } : undefined),
     })
   } catch {
     // Сеть не дошла: сервер спит, интернета нет, CORS. Отличить нельзя —
@@ -69,6 +72,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  /** Сырое тело — для обложек. `content-type` берётся у самого блоба;
+   *  сервер всё равно определяет тип по байтам, но заголовок не должен врать. */
+  putBlob: <T>(path: string, blob: Blob) =>
+    request<T>(path, {
+      method: 'PUT',
+      body: blob,
+      headers: { 'content-type': blob.type || 'application/octet-stream' },
+    }),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
   patch: <T>(path: string, body: unknown) =>

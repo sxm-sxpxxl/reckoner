@@ -56,7 +56,7 @@ async fn seed_dacha(conn: &mut sqlx::PgConnection) -> (Uuid, Vec<Uuid>) {
 #[tokio::test]
 async fn blank_title_becomes_the_default_one() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     // В дизайне встреча создаётся одной кнопкой, названия может не быть вовсе.
     let view = meetings::create_meeting(
@@ -85,7 +85,7 @@ async fn blank_title_becomes_the_default_one() {
 #[tokio::test]
 async fn creation_writes_a_log_line() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let view = meetings::create_meeting(
         &mut tx,
@@ -114,7 +114,7 @@ async fn creation_writes_a_log_line() {
 #[tokio::test]
 async fn missing_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let error = meetings::load_view(&mut tx, Uuid::nil())
         .await
@@ -129,7 +129,7 @@ async fn missing_meeting_is_not_found() {
 #[tokio::test]
 async fn meeting_view_reports_computed_money() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     for (payer, amount) in [(people[1], 8400), (people[0], 3200), (people[3], 2100)] {
@@ -172,7 +172,7 @@ async fn meeting_view_reports_computed_money() {
 #[tokio::test]
 async fn patch_changes_only_the_given_fields() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, _) = seed_dacha(&mut tx).await;
 
     let view = meetings::update_meeting(
@@ -197,7 +197,7 @@ async fn patch_changes_only_the_given_fields() {
 #[tokio::test]
 async fn patch_can_clear_the_description() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, _) = seed_dacha(&mut tx).await;
 
     // Пустая строка — это значение, а не «не менять»: `coalesce` в запросе
@@ -221,7 +221,7 @@ async fn patch_can_clear_the_description() {
 #[tokio::test]
 async fn blank_title_in_patch_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, _) = seed_dacha(&mut tx).await;
 
     // На создании пустое название допустимо — там формы может не быть вовсе.
@@ -246,7 +246,7 @@ async fn blank_title_in_patch_is_rejected() {
 #[tokio::test]
 async fn patch_of_missing_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let error = meetings::update_meeting(
         &mut tx,
@@ -267,7 +267,7 @@ async fn patch_of_missing_meeting_is_not_found() {
 #[tokio::test]
 async fn delete_takes_the_meeting_and_everything_under_it() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
     db::entries::insert(
         &mut tx,
@@ -314,7 +314,7 @@ async fn delete_takes_the_meeting_and_everything_under_it() {
 #[tokio::test]
 async fn delete_of_missing_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let error = meetings::delete_meeting(&mut tx, Uuid::nil())
         .await
@@ -326,7 +326,7 @@ async fn delete_of_missing_meeting_is_not_found() {
 #[tokio::test]
 async fn entries_come_newest_first() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let early = Utc
@@ -367,7 +367,7 @@ async fn entries_come_newest_first() {
 #[tokio::test]
 async fn log_returns_twelve_newest_records() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, _) = seed_dacha(&mut tx).await;
 
     for index in 0..15 {
@@ -391,7 +391,7 @@ async fn log_returns_twelve_newest_records() {
 #[tokio::test]
 async fn server_assigns_position_and_colour() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let meeting = meetings::create_meeting(
         &mut tx,
         meetings::CreateMeeting {
@@ -426,7 +426,7 @@ async fn server_assigns_position_and_colour() {
 #[tokio::test]
 async fn participant_without_emoji_gets_the_default_one() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, _) = seed_dacha(&mut tx).await;
 
     let view = participants::add_participant(
@@ -452,7 +452,7 @@ async fn participant_without_emoji_gets_the_default_one() {
 #[tokio::test]
 async fn blank_participant_name_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, _) = seed_dacha(&mut tx).await;
 
     let error = participants::add_participant(
@@ -472,7 +472,7 @@ async fn blank_participant_name_is_rejected() {
 #[tokio::test]
 async fn participant_in_a_missing_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     // Без проверки существования встречи здесь была бы ошибка внешнего ключа,
     // то есть `500` вместо `404`.
@@ -493,7 +493,7 @@ async fn participant_in_a_missing_meeting_is_not_found() {
 #[tokio::test]
 async fn patch_keeps_the_untouched_field() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let view = participants::update_participant(
@@ -518,7 +518,7 @@ async fn patch_keeps_the_untouched_field() {
 #[tokio::test]
 async fn participant_of_another_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (first_meeting, first_people) = seed_dacha(&mut tx).await;
     let (second_meeting, _) = seed_dacha(&mut tx).await;
     assert_ne!(first_meeting, second_meeting);
@@ -543,7 +543,7 @@ async fn participant_of_another_meeting_is_not_found() {
 #[tokio::test]
 async fn deleting_a_participant_takes_their_entries() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
     for payer in [people[0], people[1]] {
         db::entries::insert(
@@ -579,7 +579,7 @@ async fn deleting_a_participant_takes_their_entries() {
 #[tokio::test]
 async fn deleting_a_participant_of_another_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (_, people) = seed_dacha(&mut tx).await;
     let (other_meeting, _) = seed_dacha(&mut tx).await;
 
@@ -593,7 +593,7 @@ async fn deleting_a_participant_of_another_meeting_is_not_found() {
 #[tokio::test]
 async fn expense_is_split_evenly_by_default() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let view = api_entries::add_entry(
@@ -625,7 +625,7 @@ async fn expense_is_split_evenly_by_default() {
 #[tokio::test]
 async fn blank_expense_description_gets_the_default_one() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let view = api_entries::add_entry(
@@ -654,7 +654,7 @@ async fn blank_expense_description_gets_the_default_one() {
 #[tokio::test]
 async fn transfer_points_at_its_recipient() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let view = api_entries::add_entry(
@@ -685,7 +685,7 @@ async fn transfer_points_at_its_recipient() {
 #[tokio::test]
 async fn partial_shares_are_stored_without_the_full_ones() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let view = api_entries::add_entry(
@@ -735,7 +735,7 @@ async fn partial_shares_are_stored_without_the_full_ones() {
 #[tokio::test]
 async fn zero_amount_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let error = api_entries::add_entry(
@@ -760,7 +760,7 @@ async fn zero_amount_is_rejected() {
 #[tokio::test]
 async fn expense_with_a_recipient_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     // CHECK в схеме поймал бы это тоже, но ответом был бы `500`.
@@ -786,7 +786,7 @@ async fn expense_with_a_recipient_is_rejected() {
 #[tokio::test]
 async fn transfer_without_a_recipient_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let error = api_entries::add_entry(
@@ -811,7 +811,7 @@ async fn transfer_without_a_recipient_is_rejected() {
 #[tokio::test]
 async fn transfer_to_self_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let error = api_entries::add_entry(
@@ -836,7 +836,7 @@ async fn transfer_to_self_is_rejected() {
 #[tokio::test]
 async fn transfer_with_shares_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     // Перевод не делится: доли у него бессмысленны, и домен их игнорирует.
@@ -866,7 +866,7 @@ async fn transfer_with_shares_is_rejected() {
 #[tokio::test]
 async fn payer_from_another_meeting_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, _) = seed_dacha(&mut tx).await;
     let (_, strangers) = seed_dacha(&mut tx).await;
 
@@ -892,7 +892,7 @@ async fn payer_from_another_meeting_is_rejected() {
 #[tokio::test]
 async fn duplicate_share_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     // Первичный ключ `(entry_id, participant_id)` поймал бы это сам, но ответом
@@ -928,7 +928,7 @@ async fn duplicate_share_is_rejected() {
 #[tokio::test]
 async fn share_out_of_range_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
 
     let error = api_entries::add_entry(
@@ -956,7 +956,7 @@ async fn share_out_of_range_is_rejected() {
 #[tokio::test]
 async fn entry_in_a_missing_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (_, people) = seed_dacha(&mut tx).await;
 
     let error = api_entries::add_entry(
@@ -1001,7 +1001,7 @@ async fn seed_expense(conn: &mut sqlx::PgConnection, meeting_id: Uuid, payer: Uu
 #[tokio::test]
 async fn patch_replaces_shares_wholesale() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
     let entry_id = seed_expense(&mut tx, meeting_id, people[0]).await;
 
@@ -1035,7 +1035,7 @@ async fn patch_replaces_shares_wholesale() {
 #[tokio::test]
 async fn empty_shares_return_the_expense_to_an_even_split() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
     let entry_id = db::entries::insert(
         &mut tx,
@@ -1079,7 +1079,7 @@ async fn empty_shares_return_the_expense_to_an_even_split() {
 #[tokio::test]
 async fn patch_cannot_add_a_recipient_to_an_expense() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
     let entry_id = seed_expense(&mut tx, meeting_id, people[0]).await;
 
@@ -1107,7 +1107,7 @@ async fn patch_cannot_add_a_recipient_to_an_expense() {
 #[tokio::test]
 async fn patch_cannot_make_a_transfer_point_at_its_payer() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
     let entry_id = db::entries::insert(
         &mut tx,
@@ -1150,7 +1150,7 @@ async fn patch_cannot_make_a_transfer_point_at_its_payer() {
 #[tokio::test]
 async fn patch_of_an_entry_from_another_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (first_meeting, first_people) = seed_dacha(&mut tx).await;
     let (second_meeting, _) = seed_dacha(&mut tx).await;
     let entry_id = seed_expense(&mut tx, first_meeting, first_people[0]).await;
@@ -1177,7 +1177,7 @@ async fn patch_of_an_entry_from_another_meeting_is_not_found() {
 #[tokio::test]
 async fn delete_logs_the_amount_and_removes_the_entry() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
     let entry_id = seed_expense(&mut tx, meeting_id, people[0]).await;
 
@@ -1193,7 +1193,7 @@ async fn delete_logs_the_amount_and_removes_the_entry() {
 #[tokio::test]
 async fn delete_of_an_entry_from_another_meeting_is_not_found() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let (first_meeting, first_people) = seed_dacha(&mut tx).await;
     let (second_meeting, _) = seed_dacha(&mut tx).await;
     let entry_id = seed_expense(&mut tx, first_meeting, first_people[0]).await;
@@ -1267,7 +1267,7 @@ async fn seed_card(
 #[tokio::test]
 async fn list_returns_cards_with_computed_totals() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let marker = marker();
     seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), "Настя", 500).await;
 
@@ -1291,7 +1291,7 @@ async fn list_returns_cards_with_computed_totals() {
 #[tokio::test]
 async fn query_matches_title_and_description() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let marker = marker();
     let meeting_id = seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), "Настя", 0).await;
     let unique_word = format!("солёные{marker}");
@@ -1326,7 +1326,7 @@ async fn query_matches_title_and_description() {
 #[tokio::test]
 async fn percent_in_query_is_not_a_wildcard() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let marker = marker();
     seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), "Настя", 0).await;
 
@@ -1348,7 +1348,7 @@ async fn percent_in_query_is_not_a_wildcard() {
 #[tokio::test]
 async fn participant_filter_keeps_only_meetings_with_that_name() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let marker = marker();
     let unique_name = format!("Настя {marker}");
     let with_her = seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), &unique_name, 0).await;
@@ -1373,7 +1373,7 @@ async fn participant_filter_keeps_only_meetings_with_that_name() {
 #[tokio::test]
 async fn default_sort_is_newest_meeting_first() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let marker = marker();
     let older = seed_card(&mut tx, &marker, "Раньше", (2026, 7, 1), "Настя", 0).await;
     let newer = seed_card(&mut tx, &marker, "Позже", (2026, 7, 30), "Настя", 0).await;
@@ -1410,7 +1410,7 @@ async fn default_sort_is_newest_meeting_first() {
 #[tokio::test]
 async fn total_desc_puts_the_expensive_meeting_first() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let marker = marker();
     // Дешёвая встреча позже дорогой, поэтому по умолчанию она была бы первой.
     let cheap = seed_card(&mut tx, &marker, "Дешёвая", (2026, 7, 30), "Настя", 100).await;
@@ -1434,7 +1434,7 @@ async fn total_desc_puts_the_expensive_meeting_first() {
 #[tokio::test]
 async fn open_first_puts_the_most_open_meeting_first() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let marker = marker();
     // Закрытая встреча позже открытой: без сортировки она была бы первой.
     let settled = seed_card(&mut tx, &marker, "Закрытая", (2026, 7, 30), "Настя", 0).await;
@@ -1460,7 +1460,7 @@ async fn open_first_puts_the_most_open_meeting_first() {
 #[tokio::test]
 async fn unknown_sort_is_rejected() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
 
     let error = meetings::load_cards(
         &mut tx,
@@ -1479,7 +1479,7 @@ async fn unknown_sort_is_rejected() {
 #[tokio::test]
 async fn blank_filters_are_treated_as_absent() {
     let pool = test_pool().await;
-    let mut tx = pool.begin().await.expect("транзакция");
+    let mut tx = support::begin(&pool).await;
     let marker = marker();
     let meeting_id = seed_card(&mut tx, &marker, "Шашлыки", (2026, 7, 20), "Настя", 0).await;
 

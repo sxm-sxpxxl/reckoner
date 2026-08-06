@@ -1,4 +1,5 @@
 .zone {
+  position: relative;
   min-height: 214px;
   border-radius: var(--r-modal);
   border: 1.5px dashed rgba(22, 21, 15, 0.2);
@@ -9,11 +10,30 @@
   place-items: center;
   padding: 20px;
   text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.zone:hover {
+  border-color: var(--border-strong);
+}
+
+/* Файл над зоной. Подсветка обязательна: без неё непонятно, попадёт ли
+   отпущенный файл именно сюда. */
+.dragging {
+  border-color: var(--accent);
+  background-color: var(--chip-picked-bg);
 }
 
 .filled {
   border-style: solid;
   border-color: var(--border);
+}
+
+.hiddenInput {
+  display: none;
 }
 
 .emoji {
@@ -31,4 +51,32 @@
   margin: 0;
   font-size: 12.5px;
   color: var(--text-2);
+}
+
+.error {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--debt);
+  text-wrap: pretty;
+}
+
+/* Кнопки поверх готовой обложки. Прижаты к низу, чтобы не закрывать картинку. */
+.actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-modal);
+  background: rgba(251, 249, 244, 0.72);
+  font-size: 13.5px;
+  font-weight: 600;
 }

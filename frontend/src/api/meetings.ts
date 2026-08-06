@@ -162,6 +162,18 @@ export function useUpdateEntry(meetingId: string) {
   )
 }
 
+export function useUploadCover(meetingId: string) {
+  return useMeetingMutation(meetingId, (blob: Blob) =>
+    api.putBlob<Meeting>(`/api/meetings/${meetingId}/cover`, blob),
+  )
+}
+
+export function useRemoveCover(meetingId: string) {
+  return useMeetingMutation(meetingId, () =>
+    api.delete<Meeting>(`/api/meetings/${meetingId}/cover`),
+  )
+}
+
 export function useRemoveEntry(meetingId: string) {
   return useMeetingMutation(meetingId, (id: string) =>
     api.delete<Meeting>(`/api/meetings/${meetingId}/entries/${id}`),

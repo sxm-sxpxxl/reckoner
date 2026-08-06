@@ -21,11 +21,16 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/reckoner/',
         scope: '/reckoner/',
+        // Интерфейс русский. По умолчанию плагин ставит `en`, и системе это
+        // важно: от языка зависят переносы и голос экранного диктора.
+        lang: 'ru',
         background_color: '#F2EEE5',
         theme_color: '#F2EEE5',
         icons: [
-          // Плейсхолдеры из шаблона. Настоящие иконки со знаком «Ф» — задача
-          // этапа PWA перед деплоем.
+          // Знак «Ф» белым на #16150F — тот же, что в шапке приложения.
+          // maskable отдельными файлами и с большими полями: система вырезает
+          // из них круг или скруглённый квадрат по своему вкусу, и знак
+          // из обычной иконки она обрезала бы по краям.
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',
@@ -35,6 +40,18 @@ export default defineConfig({
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+          },
+          {
+            src: 'pwa-maskable-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: 'pwa-maskable-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
