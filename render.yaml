@@ -1,0 +1,37 @@
+# Инфраструктура бэкенда как код. Render читает этот файл из репозитория
+# и создаёт по нему сервис (Blueprint).
+services:
+  - type: web
+    name: reckoner-api
+    runtime: docker
+    plan: free
+
+    # Регион обязан совпадать с регионом Neon. Это важнее близости к
+    # пользователю: один запрос к API делает несколько обращений к базе,
+    # поэтому задержка между сервисом и базой умножается, а задержка от
+    # пользователя до сервиса — нет.
+    region: frankfurt
+
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+
+    # Render дёргает этот путь, чтобы понять, поднялся ли сервис. Ручка
+    # отвечает без обращения к базе, поэтому проверка не зависит от того,
+    # проснулся ли compute Neon.
+    healthCheckPath: /api/health
+
+    autoDeploy: true
+
+    envVars:
+      # `sync: false` — значение вводится в панели Render и в репозиторий
+      # не попадает. Строка обязана быть unpooled: pooled-эндпоинт Neon это
+      # PgBouncer в transaction mode, он выбрасывает подготовленные запросы
+      # между транзакциями и ломает sqlx.
+      - key: DATABASE_URL
+        sync: false
+
+      # Origin фронтенда на GitHub Pages, вида https://ИМЯ.github.io —
+      # без пути и без слеша на конце. Если задана криво, сервер не поднимется:
+      # молча открытый CORS в проде хуже упавшего деплоя.
+      - key: ALLOWED_ORIGIN
+        sync: false

@@ -1,0 +1,63 @@
+name: Pages
+
+on:
+  push:
+    branches: [master]
+  # Ручной запуск: адрес API задаётся переменной репозитория, и после её
+  # правки фронт надо пересобрать, не делая пустого коммита.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Параллельные публикации перетирали бы друг друга. Текущую не отменяем:
+# прерванный деплой оставил бы сайт в половинчатом состоянии.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Сборка
+        env:
+          # Адрес сервиса на Render. Переменная репозитория, а не секрет:
+          # адрес и так виден в запросах из браузера, прятать нечего.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npm run build
+
+      # Pages отдаёт статику и про маршруты SPA не знает: прямой заход на
+      # /reckoner/meetings/<id> вернул бы 404, то есть любая ссылка на встречу,
+      # кинутая в чат, не открылась бы. 404.html — штатный для Pages фолбэк.
+      - name: SPA-фолбэк
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
