@@ -1,0 +1,86 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  /* Хит-таргет ≥ 40 px — требование хендоффа для тача. Задаём высотой,
+     а не невидимой накладкой: накладка перехватывала бы клики у соседей. */
+  min-height: 40px;
+  padding: 11px 20px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow-primary);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.secondary {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.secondary:hover:not(:disabled) {
+  background: rgba(22, 21, 15, 0.06);
+}
+
+.dark {
+  background: var(--ink);
+  color: #fff;
+}
+
+.dark:hover:not(:disabled) {
+  background: #2a2820;
+}
+
+.danger {
+  background: transparent;
+  border-color: var(--debt);
+  color: var(--debt);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--debt);
+  color: #fff;
+}
+
+.small {
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 13.5px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentcolor;
+  border-top-color: transparent;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
