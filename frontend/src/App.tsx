@@ -5,6 +5,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ApiError } from './api/client'
 import { useServerWake } from './api/health'
 import { startTheme, stopTheme } from './domain/theme-music'
+import FloatingPhrases from './components/layout/FloatingPhrases'
 import WakeScreen from './components/layout/WakeScreen'
 import MeetingPage from './routes/MeetingPage'
 import MeetingsListPage from './routes/MeetingsListPage'
@@ -78,10 +79,15 @@ function Shell() {
   if (wake === 'slow') return <WakeScreen />
 
   return (
-    <Routes>
-      <Route path="/" element={<MeetingsListPage />} />
-      <Route path="/meetings/:id" element={<MeetingPage />} />
-    </Routes>
+    <>
+      {/* Один слой на всё приложение, а не по одному на страницу: иначе фразы
+          перезапускались бы с новых мест при каждом переходе. */}
+      <FloatingPhrases />
+      <Routes>
+        <Route path="/" element={<MeetingsListPage />} />
+        <Route path="/meetings/:id" element={<MeetingPage />} />
+      </Routes>
+    </>
   )
 }
 

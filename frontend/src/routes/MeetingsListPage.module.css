@@ -1,4 +1,7 @@
 .page {
+  /* Над фоновым слоем с фразами: тот лежит на z-index 0. */
+  position: relative;
+  z-index: 1;
   padding-bottom: 60px;
   animation: fadeIn 200ms ease;
 }

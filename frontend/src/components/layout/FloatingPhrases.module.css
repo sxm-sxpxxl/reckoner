@@ -1,0 +1,28 @@
+/* Слой лежит под содержимым и не ловит мышь: это украшение, и мешать
+   попадать по кнопкам оно не должно. */
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.phrase {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 700;
+  /* Положительный трекинг, хотя у заголовков он отрицательный: контур рисуется
+     по обводке глифа и расширяет каждую букву, поэтому при плотной посадке
+     соседние символы налезали друг на друга. */
+  letter-spacing: 0.04em;
+  /* Полупрозрачная обводка вместо заливки: сплошной текст на фоне спорил бы
+     с суммами, а контур читается как фактура. */
+  color: transparent;
+  -webkit-text-stroke: 1px var(--phrase-ink);
+  user-select: none;
+  will-change: transform;
+}
