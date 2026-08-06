@@ -5,6 +5,7 @@
 //! этот слой не меняет. Если ручке не хватает данных — это повод вернуться
 //! к спеке, а не дописать запрос здесь.
 
+pub mod covers;
 pub mod entries;
 pub mod error;
 pub mod meetings;
@@ -36,6 +37,19 @@ const LOG_LIMIT: i64 = 12;
 /// собираться в тесте без переменных среды, а решение «падать или нет при кривом
 /// `ALLOWED_ORIGIN`» принимает `main`.
 pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
+    // Обложки — отдельный под-роутер: `DefaultBodyLimit` применяется ко всему
+    // роутеру, на который навешан, и одним слоем два разных лимита не задать.
+    // Мегабайтная картинка в 64 КБ для JSON не пролезет, а поднимать общий
+    // лимит до мегабайта значило бы разрешить мегабайтный JSON.
+    let covers = Router::new()
+        .route(
+            "/api/meetings/:id/cover",
+            get(covers::show)
+                .put(covers::upload)
+                .delete(covers::destroy),
+        )
+        .layer(DefaultBodyLimit::max(covers::COVER_BODY_LIMIT));
+
     Router::new()
         .route("/api/health", get(health))
         .route("/api/meetings", get(meetings::list).post(meetings::create))
@@ -56,6 +70,7 @@ pub fn router(pool: PgPool, cors: CorsLayer) -> Router {
                 .delete(meetings::destroy),
         )
         .layer(DefaultBodyLimit::max(JSON_BODY_LIMIT))
+        .merge(covers)
         .layer(cors)
         .with_state(pool)
 }

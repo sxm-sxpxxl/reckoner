@@ -19,6 +19,13 @@ pub enum ApiError {
     /// встречи — тоже «нет»: по этому URL его не существует.
     #[error("не найдено")]
     NotFound,
+    /// Тело больше допустимого. Отдельный вариант, а не `Validation`: поля,
+    /// которое надо подсветить, здесь нет — виноват файл целиком.
+    #[error("файл слишком большой")]
+    TooLarge,
+    /// Не картинка. Тип определяется по байтам, а не по заголовку.
+    #[error("неподдерживаемый тип файла")]
+    UnsupportedMedia,
     /// Всё прочее. `#[from]` даёт `?` на любом вызове слоя `db`.
     #[error("ошибка базы: {0}")]
     Database(#[from] sqlx::Error),
@@ -44,6 +51,16 @@ impl IntoResponse for ApiError {
             Self::NotFound => {
                 (StatusCode::NOT_FOUND, Json(json!({ "error": "not-found" }))).into_response()
             }
+            Self::TooLarge => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(json!({ "error": "too-large" })),
+            )
+                .into_response(),
+            Self::UnsupportedMedia => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                Json(json!({ "error": "unsupported-media" })),
+            )
+                .into_response(),
             Self::Database(error) => {
                 // Единственное место, где ошибка базы вообще видна человеку.
                 // Локально это консоль `cargo run`, на Render — панель логов.
@@ -105,6 +122,21 @@ mod tests {
 
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body, serde_json::json!({ "error": "not-found" }));
+    }
+
+    #[tokio::test]
+    async fn oversized_and_wrong_type_answer_in_our_shape() {
+        // Оба кода клиент разбирает как JSON, поэтому текстовых тел здесь быть
+        // не должно так же, как у остальных ошибок.
+        let (status, body) = parts(ApiError::TooLarge).await;
+
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(body, serde_json::json!({ "error": "too-large" }));
+
+        let (status, body) = parts(ApiError::UnsupportedMedia).await;
+
+        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        assert_eq!(body, serde_json::json!({ "error": "unsupported-media" }));
     }
 
     #[tokio::test]

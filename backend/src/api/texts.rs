@@ -23,6 +23,8 @@ pub const DEFAULT_EXPENSE_DESCRIPTION: &str = "Без описания";
 
 pub const MEETING_CREATED: &str = "Встреча создана";
 pub const MEETING_EDITED: &str = "Встреча отредактирована";
+pub const COVER_UPDATED: &str = "Обновлена обложка встречи";
+pub const COVER_REMOVED: &str = "Обложка удалена";
 
 pub fn participant_joined(name: &str) -> String {
     format!("{name} присоединяется к встрече")
