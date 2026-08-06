@@ -99,7 +99,17 @@ export default function MeetingsListPage() {
           (meetings.data.length === 0 ? (
             <MeetingsEmpty onCreate={startCreating} />
           ) : (
-            <div className={`${styles.grid} stagger`}>
+            // `key` на сетке — чтобы каскад проигрывался при каждой смене
+            // фильтров. Без него при возврате к уже запрошенной сортировке
+            // данные приходят из кэша, `key` карточек прежние, и React
+            // переставляет существующие узлы вместо создания новых — анимация
+            // на них не перезапускается. Появлялись только те карточки,
+            // которых в прошлой выдаче не было, и половина списка выезжала,
+            // а половина стояла.
+            <div
+              key={`${debouncedSearch}|${participant}|${sort}`}
+              className={`${styles.grid} stagger`}
+            >
               {meetings.data.map((meeting) => (
                 <MeetingCard key={meeting.id} meeting={meeting} />
               ))}
