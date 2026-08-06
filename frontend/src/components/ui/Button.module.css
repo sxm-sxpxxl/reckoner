@@ -16,7 +16,14 @@
     background 0.15s ease,
     color 0.15s ease,
     border-color 0.15s ease,
-    transform 0.15s ease;
+    box-shadow 0.12s ease,
+    transform 0.12s ease;
+}
+
+/* Нажатие видно, а не только слышно кликом мыши. У основной кнопки под низом
+   «литая» тень — на нажатии кнопка садится ровно на неё, как настоящая. */
+.button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .button:disabled {
@@ -32,6 +39,11 @@
 
 .primary:hover:not(:disabled) {
   background: var(--accent-hover);
+}
+
+.primary:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--accent-shadow);
 }
 
 .secondary {

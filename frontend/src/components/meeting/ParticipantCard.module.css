@@ -6,6 +6,19 @@
   align-items: center;
   gap: 11px;
   box-shadow: var(--shadow-card);
+  /* `backwards`, а не `both`: `both` после конца анимации продолжает держать
+     `transform: none`, а анимация в каскаде сильнее обычных правил — подъём
+     при наведении просто не срабатывал. `backwards` нужен из-за задержки:
+     без него карточка до своей очереди была бы видна в конечном виде. */
+  animation: riseIn 200ms ease backwards;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card-hover);
 }
 
 .body {

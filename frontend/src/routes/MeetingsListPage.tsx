@@ -100,8 +100,8 @@ export default function MeetingsListPage() {
             <MeetingsEmpty onCreate={startCreating} />
           ) : (
             <div className={styles.grid}>
-              {meetings.data.map((meeting) => (
-                <MeetingCard key={meeting.id} meeting={meeting} />
+              {meetings.data.map((meeting, index) => (
+                <MeetingCard key={meeting.id} meeting={meeting} index={index} />
               ))}
             </div>
           ))}

@@ -66,6 +66,14 @@
 
 .rows {
   background: var(--surface-2);
+  animation: unfold 180ms ease both;
+}
+
+@keyframes unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }
 
 .row {

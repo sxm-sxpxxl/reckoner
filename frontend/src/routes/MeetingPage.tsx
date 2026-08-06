@@ -92,15 +92,19 @@ export default function MeetingPage() {
     <div className={styles.page}>
       {header}
       <Container>
-        <MeetingSummary meeting={data} onEdit={() => setModal({ kind: 'meeting' })} />
+        <div className={styles.appear}>
+          <MeetingSummary meeting={data} onEdit={() => setModal({ kind: 'meeting' })} />
+        </div>
 
-        <ParticipantsSection
-          participants={data.participants}
-          onAdd={() => setModal({ kind: 'participant' })}
-          onEdit={(participant) => setModal({ kind: 'participant', participant })}
-        />
+        <div className={styles.appear} style={{ animationDelay: '70ms' }}>
+          <ParticipantsSection
+            participants={data.participants}
+            onAdd={() => setModal({ kind: 'participant' })}
+            onEdit={(participant) => setModal({ kind: 'participant', participant })}
+          />
+        </div>
 
-        <div className={styles.columns}>
+        <div className={`${styles.columns} ${styles.appear}`} style={{ animationDelay: '140ms' }}>
           <HistorySection
             meeting={data}
             onAddExpense={() =>
@@ -124,7 +128,9 @@ export default function MeetingPage() {
           />
         </div>
 
-        <ChangeLog log={data.log} />
+        <div className={styles.appear} style={{ animationDelay: '210ms' }}>
+          <ChangeLog log={data.log} />
+        </div>
       </Container>
 
       {modal?.kind === 'meeting' && <MeetingFormModal meeting={data} onClose={close} />}

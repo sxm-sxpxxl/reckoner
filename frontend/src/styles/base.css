@@ -11,7 +11,11 @@ body {
 }
 
 body {
-  background: var(--bg);
+  /* `fixed` — чтобы пятна света не уезжали при прокрутке: они изображают
+     освещение сцены, а не часть содержимого. */
+  background: var(--bg-gradient), var(--bg);
+  background-attachment: fixed;
+  min-height: 100vh;
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: 14px;

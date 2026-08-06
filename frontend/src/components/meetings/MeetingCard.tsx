@@ -9,7 +9,15 @@ import Money from '../ui/Money'
 import StatusBadge from './StatusBadge'
 import styles from './MeetingCard.module.css'
 
-export default function MeetingCard({ meeting }: { meeting: MeetingCardData }) {
+export default function MeetingCard({
+  meeting,
+  index = 0,
+}: {
+  meeting: MeetingCardData
+  /** Порядок в сетке: задаёт задержку появления, чтобы карточки выходили
+   *  каскадом, а не все разом. */
+  index?: number
+}) {
   const tone = STATUS_TONES[meeting.status]
   const cover = meeting.hasCover
     ? `url(/api/meetings/${meeting.id}/cover?v=${meeting.coverVersion})`
@@ -18,7 +26,13 @@ export default function MeetingCard({ meeting }: { meeting: MeetingCardData }) {
   return (
     // Ссылка, а не div с onClick: иначе встречу нельзя открыть в новой вкладке
     // и скопировать адрес, а поделиться ссылкой на встречу — смысл роутинга.
-    <Link to={`/meetings/${meeting.id}`} className={styles.card} style={{ borderColor: tone.border }}>
+    <Link
+      to={`/meetings/${meeting.id}`}
+      className={styles.card}
+      // Потолок на задержке: на длинном списке последние карточки иначе
+      // выезжали бы через секунды после первых.
+      style={{ borderColor: tone.border, animationDelay: `${Math.min(index, 7) * 45}ms` }}
+    >
       <div className={styles.cover} style={{ background: cover }}>
         <span className={styles.emoji} aria-hidden="true">
           {meeting.emoji}
