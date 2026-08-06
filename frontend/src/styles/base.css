@@ -53,7 +53,7 @@ textarea {
 @keyframes riseIn {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(22px);
   }
 
   to {

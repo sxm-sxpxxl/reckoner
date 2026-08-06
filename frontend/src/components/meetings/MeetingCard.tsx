@@ -31,7 +31,7 @@ export default function MeetingCard({
       className={styles.card}
       // Потолок на задержке: на длинном списке последние карточки иначе
       // выезжали бы через секунды после первых.
-      style={{ borderColor: tone.border, animationDelay: `${Math.min(index, 11) * 80}ms` }}
+      style={{ borderColor: tone.border, animationDelay: `${Math.min(index, 7) * 130}ms` }}
     >
       <div className={styles.cover} style={{ background: cover }}>
         <span className={styles.emoji} aria-hidden="true">
