@@ -27,7 +27,10 @@
 .grid {
   margin-top: 22px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* `min(320px, 100%)`, а не голые 320px: на экране уже 376 px колонка иначе
+     остаётся 320-пиксельной, вылезает из контейнера и съедает правое поле —
+     отступы становятся несимметричными. С `min()` она ужимается по месту. */
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: 18px;
 }
 
