@@ -46,7 +46,7 @@ export default function DebtsTableView({
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="stagger">
           {participants.map((debtor) => (
             <tr key={debtor.id}>
               <th className={styles.rowHead} scope="row">

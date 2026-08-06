@@ -10,7 +10,7 @@ export default function DebtsBalanceView({ participants }: { participants: Parti
   const scale = Math.max(...participants.map((person) => Math.abs(person.netRubles)), 1)
 
   return (
-    <div className={styles.panel}>
+    <div className={`${styles.panel} stagger`}>
       {participants.map((person) => {
         const net = person.netRubles
         const width = net === 0 ? 0 : Math.max((Math.abs(net) / scale) * 50, MIN_PERCENT)

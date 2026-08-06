@@ -52,7 +52,7 @@ export default function HistorySection({
         </div>
       ) : (
         // Порядок задаёт сервер: новые сверху.
-        <div className={styles.panel}>
+        <div className={`${styles.panel} stagger`}>
           {meeting.entries.map((entry) => (
             <HistoryRow
               key={entry.id}

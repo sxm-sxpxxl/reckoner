@@ -10,11 +10,6 @@
   transition:
     box-shadow 0.18s ease,
     transform 0.18s ease;
-  /* `backwards`, а не `both`: `both` после конца анимации продолжает держать
-     `transform: none`, а анимация в каскаде сильнее обычных правил — подъём
-     при наведении просто не срабатывал. `backwards` нужен из-за задержки:
-     без него карточка до своей очереди была бы видна в конечном виде. */
-  animation: riseIn 440ms ease backwards;
 }
 
 .card:hover {

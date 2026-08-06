@@ -6,11 +6,6 @@
   align-items: center;
   gap: 11px;
   box-shadow: var(--shadow-card);
-  /* `backwards`, а не `both`: `both` после конца анимации продолжает держать
-     `transform: none`, а анимация в каскаде сильнее обычных правил — подъём
-     при наведении просто не срабатывал. `backwards` нужен из-за задержки:
-     без него карточка до своей очереди была бы видна в конечном виде. */
-  animation: riseIn 420ms ease backwards;
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease;
@@ -61,11 +56,3 @@
   color: var(--ink);
 }
 
-/* Каскад внутри сетки. Через `nth-child`, а не через `animationDelay` в
-   разметке: карточке незачем знать свой номер ради одной анимации. */
-.card:nth-child(2) { animation-delay: 100ms; }
-.card:nth-child(3) { animation-delay: 200ms; }
-.card:nth-child(4) { animation-delay: 300ms; }
-.card:nth-child(5) { animation-delay: 400ms; }
-.card:nth-child(6) { animation-delay: 500ms; }
-.card:nth-child(n + 7) { animation-delay: 600ms; }

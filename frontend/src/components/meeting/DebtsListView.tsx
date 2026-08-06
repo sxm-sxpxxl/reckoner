@@ -45,7 +45,7 @@ export default function DebtsListView({
   }, [settlement, people])
 
   return (
-    <div className={styles.list}>
+    <div className={`${styles.list} stagger`}>
       {groups.map((group) => {
         const open = !collapsed[group.debtor.id]
 

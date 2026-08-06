@@ -99,9 +99,9 @@ export default function MeetingsListPage() {
           (meetings.data.length === 0 ? (
             <MeetingsEmpty onCreate={startCreating} />
           ) : (
-            <div className={styles.grid}>
-              {meetings.data.map((meeting, index) => (
-                <MeetingCard key={meeting.id} meeting={meeting} index={index} />
+            <div className={`${styles.grid} stagger`}>
+              {meetings.data.map((meeting) => (
+                <MeetingCard key={meeting.id} meeting={meeting} />
               ))}
             </div>
           ))}

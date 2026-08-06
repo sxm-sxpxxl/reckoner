@@ -24,7 +24,7 @@ export default function ParticipantsSection({
           Пока никого. Добавьте участников — и можно записывать расходы.
         </div>
       ) : (
-        <div className={styles.grid}>
+        <div className={`${styles.grid} stagger`}>
           {participants.map((participant) => (
             <ParticipantCard
               key={participant.id}

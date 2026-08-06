@@ -10,7 +10,7 @@ export default function ChangeLog({ log }: { log: LogRecord[] }) {
   return (
     <section className={styles.section}>
       <h2 className={styles.title}>Что менялось</h2>
-      <ul className={styles.list}>
+      <ul className={`${styles.list} stagger`}>
         {log.map((record) => (
           <li key={record.id} className={styles.item}>
             <span className={styles.time}>{formatLogTime(record.createdAt)}</span>
