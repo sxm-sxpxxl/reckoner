@@ -1,7 +1,9 @@
 .head {
   margin-top: 34px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  /* `min()` — по той же причине, что в остальных сетках: без него колонка
+     не ужимается ниже своего минимума и вылезает из контейнера. */
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: 22px;
 }
 

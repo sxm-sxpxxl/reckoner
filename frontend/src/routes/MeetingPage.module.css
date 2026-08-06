@@ -33,7 +33,9 @@
 .columns {
   margin-top: 34px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  /* `min(330px, 100%)`, а не голые 330px: на узком экране колонка иначе
+     остаётся 330-пиксельной и съедает правое поле контейнера почти целиком. */
+  grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
   gap: 22px;
   align-items: start;
 }
