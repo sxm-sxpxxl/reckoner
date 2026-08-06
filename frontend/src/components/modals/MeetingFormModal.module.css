@@ -1,0 +1,62 @@
+.form {
+  display: grid;
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.input,
+.textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  border-radius: var(--r-input);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 14px;
+}
+
+.textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.invalid {
+  border-color: var(--debt);
+}
+
+.error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--debt);
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+}
+
+.row > .field:first-child {
+  flex: 1 1 auto;
+}
+
+/* Отжимает «Отмена» и «Создать» вправо: слева в подвале живёт «Удалить»,
+   которой у создания нет. */
+.footSpacer {
+  margin-left: auto;
+}
+
+.emojiInput {
+  width: 76px;
+  text-align: center;
+  font-size: 19px;
+}

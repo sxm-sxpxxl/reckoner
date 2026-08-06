@@ -1,0 +1,68 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(22, 21, 15, 0.42);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: fadeIn 160ms ease;
+}
+
+.panel {
+  width: 100%;
+  max-width: 460px;
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--surface-2);
+  border-radius: var(--r-modal);
+  padding: 24px;
+  box-shadow: var(--shadow-modal);
+  animation: riseIn 240ms ease both;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+
+.close {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: none;
+  border-radius: 50%;
+  background: rgba(22, 21, 15, 0.07);
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+}
+
+.close:hover {
+  background: rgba(22, 21, 15, 0.14);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.footSpacer {
+  margin-left: auto;
+}

@@ -8,6 +8,7 @@ import Container from '../components/layout/Container'
 import MeetingCard from '../components/meetings/MeetingCard'
 import MeetingFilters from '../components/meetings/MeetingFilters'
 import MeetingsEmpty from '../components/meetings/MeetingsEmpty'
+import MeetingFormModal from '../components/modals/MeetingFormModal'
 import Button from '../components/ui/Button'
 import styles from './MeetingsListPage.module.css'
 
@@ -46,9 +47,8 @@ export default function MeetingsListPage() {
     return [...unique].sort((left, right) => left.localeCompare(right, 'ru'))
   }, [allMeetings.data])
 
-  const startCreating = () => {
-    // Модалка создания — следующая задача плана.
-  }
+  const [creating, setCreating] = useState(false)
+  const startCreating = () => setCreating(true)
 
   return (
     <div className={styles.page}>
@@ -111,6 +111,8 @@ export default function MeetingsListPage() {
             </div>
           ))}
       </Container>
+
+      {creating && <MeetingFormModal onClose={() => setCreating(false)} />}
     </div>
   )
 }

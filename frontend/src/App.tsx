@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { useServerWake } from './api/health'
 import WakeScreen from './components/layout/WakeScreen'
+import MeetingPage from './routes/MeetingPage'
 import MeetingsListPage from './routes/MeetingsListPage'
 
 const queryClient = new QueryClient({
@@ -27,6 +28,7 @@ function Shell() {
   return (
     <Routes>
       <Route path="/" element={<MeetingsListPage />} />
+      <Route path="/meetings/:id" element={<MeetingPage />} />
     </Routes>
   )
 }
