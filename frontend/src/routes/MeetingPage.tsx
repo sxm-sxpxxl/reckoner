@@ -96,7 +96,7 @@ export default function MeetingPage() {
           <MeetingSummary meeting={data} onEdit={() => setModal({ kind: 'meeting' })} />
         </div>
 
-        <div className={styles.appear} style={{ animationDelay: '600ms' }}>
+        <div className={styles.appear} style={{ animationDelay: '320ms' }}>
           <ParticipantsSection
             participants={data.participants}
             onAdd={() => setModal({ kind: 'participant' })}
@@ -104,7 +104,7 @@ export default function MeetingPage() {
           />
         </div>
 
-        <div className={`${styles.columns} ${styles.appear}`} style={{ animationDelay: '1200ms' }}>
+        <div className={`${styles.columns} ${styles.appear}`} style={{ animationDelay: '640ms' }}>
           <HistorySection
             meeting={data}
             onAddExpense={() =>
@@ -128,7 +128,7 @@ export default function MeetingPage() {
           />
         </div>
 
-        <div className={styles.appear} style={{ animationDelay: '1800ms' }}>
+        <div className={styles.appear} style={{ animationDelay: '960ms' }}>
           <ChangeLog log={data.log} />
         </div>
       </Container>
