@@ -50,7 +50,7 @@
 }
 
 .zero {
-  background: rgba(22, 21, 15, 0.05);
+  background: var(--wash-1);
   border-color: var(--border);
   color: var(--text-muted);
 }

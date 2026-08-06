@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(22, 21, 15, 0.42);
+  background: var(--overlay);
   backdrop-filter: blur(3px);
   display: grid;
   place-items: center;
@@ -44,7 +44,7 @@
   flex: none;
   border: none;
   border-radius: 50%;
-  background: rgba(22, 21, 15, 0.07);
+  background: var(--wash-2);
   color: var(--ink);
   cursor: pointer;
   display: grid;
@@ -53,7 +53,7 @@
 }
 
 .close:hover {
-  background: rgba(22, 21, 15, 0.14);
+  background: var(--wash-3);
 }
 
 .foot {

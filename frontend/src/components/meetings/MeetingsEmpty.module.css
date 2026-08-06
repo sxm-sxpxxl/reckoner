@@ -1,5 +1,5 @@
 .empty {
-  border: 1.5px dashed rgba(22, 21, 15, 0.18);
+  border: 1.5px dashed var(--border-strong);
   border-radius: var(--r-card);
   padding: 56px 24px;
   display: grid;

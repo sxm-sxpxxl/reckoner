@@ -29,7 +29,7 @@
 }
 
 .main:hover {
-  background: rgba(22, 21, 15, 0.03);
+  background: var(--wash-1);
 }
 
 .body {
@@ -83,7 +83,7 @@
   border: none;
   background: none;
   cursor: pointer;
-  color: #cfc9bb;
+  color: var(--text-muted);
   font-size: 14px;
   min-width: 40px;
   min-height: 40px;

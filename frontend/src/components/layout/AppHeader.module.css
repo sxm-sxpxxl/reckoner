@@ -2,9 +2,10 @@
   position: sticky;
   top: 0;
   z-index: 30;
-  background: rgba(242, 238, 229, 0.88);
+  /* Тот же цвет, что --bg, но с прозрачностью под blur. */
+  background: rgba(14, 16, 19, 0.88);
   backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(22, 21, 15, 0.09);
+  border-bottom: 1px solid var(--divider);
 }
 
 .inner {
@@ -38,8 +39,10 @@
   height: 34px;
   flex: none;
   border-radius: var(--r-logo);
+  /* Костяной квадрат с тёмной буквой: на тёмном фоне инверсия читается
+     лучше, чем тёмный знак, сливающийся с шапкой. */
   background: var(--ink);
-  color: #fff;
+  color: var(--on-light);
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 15px;

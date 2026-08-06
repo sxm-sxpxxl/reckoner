@@ -38,7 +38,7 @@
   position: relative;
   height: 10px;
   border-radius: var(--r-pill);
-  background: rgba(22, 21, 15, 0.07);
+  background: var(--wash-2);
   overflow: hidden;
 }
 
@@ -48,7 +48,7 @@
   bottom: 0;
   left: 50%;
   width: 1px;
-  background: rgba(22, 21, 15, 0.22);
+  background: var(--border-strong);
 }
 
 .bar {

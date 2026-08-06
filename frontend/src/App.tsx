@@ -4,7 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
 import { ApiError } from './api/client'
 import { useServerWake } from './api/health'
-import { playSting } from './domain/sting'
+import { startTheme, stopTheme } from './domain/theme-music'
 import WakeScreen from './components/layout/WakeScreen'
 import MeetingPage from './routes/MeetingPage'
 import MeetingsListPage from './routes/MeetingsListPage'
@@ -33,23 +33,38 @@ const queryClient = new QueryClient({
 })
 
 /**
- * Играет приветственный сигнал на первое действие пользователя.
+ * Фоновая тема.
  *
- * Не на загрузку страницы: браузеры не дают воспроизводить звук до жеста, и
- * «звук при открытии» просто не сработал бы. Первый клик или нажатие клавиши —
- * ближайший к открытию момент, когда это разрешено.
+ * Пробуем запустить сразу на открытии страницы. Браузеры блокируют звук до
+ * первого действия пользователя — это политика автовоспроизведения, обойти её
+ * из кода нельзя, — поэтому при отказе подписываемся на первый клик или
+ * нажатие клавиши и стартуем оттуда. На повторных заходах и в установленной
+ * PWA первая попытка обычно проходит.
  */
-function useWelcomeSting() {
+function useThemeMusic() {
   useEffect(() => {
-    const fire = () => void playSting()
+    let cancelled = false
 
-    // `once` — сигнал один на загрузку страницы, а не на каждый клик.
-    window.addEventListener('pointerdown', fire, { once: true })
-    window.addEventListener('keydown', fire, { once: true })
+    const tryStart = async () => {
+      const started = await startTheme()
+
+      return started || cancelled
+    }
+
+    const onGesture = () => void tryStart()
+
+    void tryStart().then((started) => {
+      if (started || cancelled) return
+
+      window.addEventListener('pointerdown', onGesture, { once: true })
+      window.addEventListener('keydown', onGesture, { once: true })
+    })
 
     return () => {
-      window.removeEventListener('pointerdown', fire)
-      window.removeEventListener('keydown', fire)
+      cancelled = true
+      window.removeEventListener('pointerdown', onGesture)
+      window.removeEventListener('keydown', onGesture)
+      stopTheme()
     }
   }, [])
 }
@@ -57,7 +72,7 @@ function useWelcomeSting() {
 function Shell() {
   const wake = useServerWake()
 
-  useWelcomeSting()
+  useThemeMusic()
 
   // Экран пробуждения показываем только пока сервер молчит дольше секунды-двух.
   if (wake === 'slow') return <WakeScreen />

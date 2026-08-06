@@ -3,7 +3,7 @@
   gap: 2px;
   padding: 3px;
   border-radius: var(--r-pill);
-  background: rgba(22, 21, 15, 0.07);
+  background: var(--wash-2);
 }
 
 .segment {
@@ -25,9 +25,9 @@
 
 .active {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-light);
 }
 
 .active:hover {
-  color: #fff;
+  color: var(--on-light);
 }

@@ -26,7 +26,7 @@
 
 .primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: var(--shadow-primary);
 }
 
@@ -41,16 +41,19 @@
 }
 
 .secondary:hover:not(:disabled) {
-  background: rgba(22, 21, 15, 0.06);
+  background: var(--wash-2);
 }
 
+/* «Тёмная» кнопка стала светлой: на тёмном фоне заливка костью — это
+   и есть самый контрастный из вариантов. Имя оставлено, чтобы не трогать
+   вызовы: роль у неё прежняя — главное действие пустого состояния. */
 .dark {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-light);
 }
 
 .dark:hover:not(:disabled) {
-  background: #2a2820;
+  background: #ffffff;
 }
 
 .danger {
@@ -61,7 +64,7 @@
 
 .danger:hover:not(:disabled) {
   background: var(--debt);
-  color: #fff;
+  color: var(--on-light);
 }
 
 .small {
