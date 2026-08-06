@@ -4,7 +4,6 @@ import { ApiError } from '../../api/client'
 import { useRemoveCover, useUploadCover } from '../../api/meetings'
 import { coverGradient } from '../../domain/cover'
 import { ImageError, compressImage } from '../../domain/imageFile'
-import Button from '../ui/Button'
 import styles from './CoverDropzone.module.css'
 
 /**
@@ -125,18 +124,19 @@ export default function CoverDropzone({
 
       {hasCover && (
         <div className={styles.actions}>
-          <Button
-            size="small"
+          <button
+            type="button"
+            className={styles.coverButton}
             onClick={(event) => {
               event.stopPropagation()
               openPicker()
             }}
           >
             Заменить
-          </Button>
-          <Button
-            size="small"
-            variant="danger"
+          </button>
+          <button
+            type="button"
+            className={`${styles.coverButton} ${styles.coverButtonDanger}`}
             onClick={(event) => {
               // Клик по кнопке не должен ещё и открыть файловый диалог.
               event.stopPropagation()
@@ -144,7 +144,7 @@ export default function CoverDropzone({
             }}
           >
             Удалить
-          </Button>
+          </button>
         </div>
       )}
 

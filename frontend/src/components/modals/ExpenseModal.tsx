@@ -7,6 +7,7 @@ import { formatRubles, parseAmount } from '../../domain/format'
 import { nextQuarters, previewShares, type Quarters } from '../../domain/sharePreview'
 import Button from '../ui/Button'
 import Modal from './Modal'
+import Select from '../ui/Select'
 import ShareRow from './ShareRow'
 import form from './MeetingFormModal.module.css'
 import styles from './ExpenseModal.module.css'
@@ -168,18 +169,16 @@ export default function ExpenseModal({
 
           {payers.map((row, index) => (
             <div key={index} className={styles.payerRow}>
-              <select
-                className={form.input}
+              <Select
+                className={styles.payerSelect}
                 value={row.participantId}
-                aria-label={`Плательщик ${index + 1}`}
-                onChange={(event) => setRow(index, { participantId: event.target.value })}
-              >
-                {meeting.participants.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.emoji} {person.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(participantId) => setRow(index, { participantId })}
+                label={`Плательщик ${index + 1}`}
+                options={meeting.participants.map((person) => ({
+                  value: person.id,
+                  label: `${person.emoji} ${person.name}`,
+                }))}
+              />
 
               <input
                 className={`${form.input} ${styles.payerAmount} ${

@@ -20,12 +20,10 @@
   color: var(--text-muted);
 }
 
+/* Только ширина: рамку, фон и отступы рисует сам `Select`. Пока здесь
+   оставались стили нативного элемента, кнопка получала их дважды — отсюда
+   лишняя высота и стрелка, съезжавшая за скруглённый угол. */
 .select {
-  min-height: 44px;
-  padding: 11px 14px;
-  border-radius: var(--r-input);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  font-size: 14px;
-  cursor: pointer;
+  flex: 0 1 180px;
+  min-width: 0;
 }

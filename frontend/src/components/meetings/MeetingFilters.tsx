@@ -1,4 +1,5 @@
 import type { SortMode } from '../../api/types'
+import Select from '../ui/Select'
 import styles from './MeetingFilters.module.css'
 
 const SORT_LABELS: Record<SortMode, string> = {
@@ -41,32 +42,24 @@ export default function MeetingFilters({
         onChange={(event) => onSearchChange(event.target.value)}
       />
 
-      <select
+      <Select
         className={styles.select}
         value={participant}
-        aria-label="Фильтр по участнику"
-        onChange={(event) => onParticipantChange(event.target.value)}
-      >
-        <option value="">Все участники</option>
-        {names.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
+        onChange={onParticipantChange}
+        label="Фильтр по участнику"
+        options={[
+          { value: '', label: 'Все участники' },
+          ...names.map((name) => ({ value: name, label: name })),
+        ]}
+      />
 
-      <select
+      <Select
         className={styles.select}
         value={sort}
-        aria-label="Сортировка"
-        onChange={(event) => onSortChange(event.target.value as SortMode)}
-      >
-        {Object.entries(SORT_LABELS).map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
+        onChange={(value) => onSortChange(value as SortMode)}
+        label="Сортировка"
+        options={Object.entries(SORT_LABELS).map(([value, label]) => ({ value, label }))}
+      />
     </div>
   )
 }

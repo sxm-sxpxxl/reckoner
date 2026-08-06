@@ -63,11 +63,15 @@ function buildLoop(): Note[] {
     bar.forEach((hz, beatIndex) => {
       const at = barIndex * BAR + beatIndex * BEAT
 
+      // Акцент на первой и третьей доле. Ровная динамика превращает
+      // остинато в метроном — качается оно как раз за счёт разницы.
+      const accent = beatIndex % 2 === 0 ? 0.55 : 0.34
+
       notes.push({
         hz,
         at,
-        hold: BEAT * 0.7,
-        gain: 0.5,
+        hold: BEAT * (beatIndex % 2 === 0 ? 0.72 : 0.5),
+        gain: accent,
         // Пила даёт «щипок», похожий на сурф-гитару шпионских тем.
         type: 'sawtooth',
       })
@@ -75,7 +79,7 @@ function buildLoop(): Note[] {
       // Тот же бас октавой выше и тише. Без него на ноутбучных динамиках тему
       // почти не слышно: они срезают всё ниже примерно 200 Гц, а корень
       // басовой линии — 110 Гц.
-      notes.push({ hz: hz * 2, at, hold: BEAT * 0.7, gain: 0.22, type: 'sawtooth' })
+      notes.push({ hz: hz * 2, at, hold: BEAT * 0.5, gain: accent * 0.42, type: 'sawtooth' })
     })
   })
 
@@ -92,6 +96,19 @@ function buildLoop(): Note[] {
   // Am(maj7) целым тактом — держит напряжение под басом.
   for (const hz of [A3, C4, E4, G4S]) {
     notes.push({ hz, at: 2 * BAR, hold: BAR * 0.9, gain: 0.1, type: 'sine' })
+  }
+
+  // Тихие щелчки на слабых долях: дают пульс, которого одному басу не хватает.
+  // Короткая высокая синусоида вместо шума — шум пришлось бы генерировать
+  // буфером, а слышно его здесь было бы ровно так же.
+  for (let beat = 0; beat < BARS * 4; beat += 1) {
+    notes.push({
+      hz: 2093,
+      at: beat * BEAT + BEAT / 2,
+      hold: 0.035,
+      gain: beat % 4 === 2 ? 0.05 : 0.03,
+      type: 'sine',
+    })
   }
 
   return notes
@@ -113,6 +130,26 @@ let nextLoopAt = 0
  *  монтирует эффект дважды и гасит первый до того, как тот доработал. Без этой
  *  проверки старый вызов после `await` оживал и оставлял вечный таймер. */
 let generation = 0
+
+const STORAGE_KEY = 'reckoner:sound'
+
+/** Включён ли звук. Выбор личный и хранится в браузере, как и тема.
+ *  По умолчанию включён: тему просили именно как часть впечатления. */
+export function isSoundOn(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+export function setSoundOn(on: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, on ? 'on' : 'off')
+  } catch {
+    // Не сохранилось — в этой сессии состояние всё равно применено.
+  }
+}
 
 function scheduleLoop(from: number) {
   if (!context || !master) return
@@ -158,6 +195,9 @@ function tick() {
  */
 export async function startTheme(): Promise<boolean> {
   if (context) return true
+  // Выключенный звук — не отказ браузера: возвращаем `true`, чтобы вызывающий
+  // не начал ждать жеста ради темы, которую человек и не просил.
+  if (!isSoundOn()) return true
 
   const Ctor =
     window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext

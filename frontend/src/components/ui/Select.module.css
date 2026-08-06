@@ -1,0 +1,98 @@
+.wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.trigger {
+  width: 100%;
+  min-height: 44px;
+  /* Правый отступ ровно под стрелку, которая лежит абсолютом внутри обёртки:
+     меньше — и текст заезжает под неё. */
+  padding: 11px 30px 11px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-input);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trigger:hover {
+  border-color: var(--accent);
+}
+
+.chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  font-size: 8px;
+  color: var(--text-3);
+}
+
+/* Список опций. Именно ради него компонент и написан: у нативного `<select>`
+   выпадашку рисует операционная система, и ни радиус, ни цвет подсветки
+   из CSS недоступны. */
+.list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-card-hover);
+  animation: pop 120ms ease;
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.option {
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.option:hover,
+.active {
+  background: var(--wash-2);
+}
+
+.selected {
+  background: var(--chip-picked-bg);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.selected.active,
+.selected:hover {
+  background: var(--chip-picked-bg);
+  outline: 1px solid var(--chip-picked-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list {
+    animation: none;
+  }
+}

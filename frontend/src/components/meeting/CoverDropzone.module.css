@@ -66,13 +66,64 @@
   text-wrap: pretty;
 }
 
-/* Кнопки поверх готовой обложки. Прижаты к низу, чтобы не закрывать картинку. */
+/* Кнопки поверх готовой обложки. Прижаты к низу, чтобы не закрывать картинку,
+   и показываются по наведению — фотографию видно целиком, пока она не нужна.
+   `focus-within` обязателен: с клавиатуры наведения не бывает, и без него
+   кнопки стали бы недостижимы. */
 .actions {
   position: absolute;
   right: 10px;
   bottom: 10px;
   display: flex;
   gap: 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.zone:hover .actions,
+.zone:focus-within .actions {
+  opacity: 1;
+}
+
+/* На тач-экранах наведения нет вовсе — там кнопки видны всегда, иначе
+   обложку не заменить с телефона. */
+@media (hover: none) {
+  .actions {
+    opacity: 1;
+  }
+}
+
+/* Собственный стиль, а не вариант общей кнопки: те рассчитаны на фон темы,
+   а здесь под кнопкой произвольная фотография. Прозрачная кнопка на ней
+   не читалась вовсе — нужна плотная подложка со своим контрастом. */
+.coverButton {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(12, 13, 15, 0.74);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.coverButton:hover {
+  background: rgba(12, 13, 15, 0.9);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.coverButtonDanger {
+  color: #ff9b86;
+}
+
+.coverButtonDanger:hover {
+  background: var(--debt);
+  border-color: var(--debt);
+  color: #fff;
 }
 
 .busy {

@@ -5,6 +5,7 @@ import { useAddEntry } from '../../api/meetings'
 import type { Meeting } from '../../api/types'
 import { parseAmount } from '../../domain/format'
 import Button from '../ui/Button'
+import Select from '../ui/Select'
 import Modal from './Modal'
 import form from './MeetingFormModal.module.css'
 import styles from './ExpenseModal.module.css'
@@ -76,39 +77,34 @@ export default function TransferModal({
     >
       <form id="transfer-form" className={form.form} onSubmit={submit}>
         <div className={form.field}>
-          <label className={form.label} htmlFor="transfer-from">
+          <span className={form.label}>
             Кто переводит
-          </label>
-          <select
-            id="transfer-from"
-            className={form.input}
+          </span>
+          <Select
             value={fromId}
-            onChange={(event) => setFromId(event.target.value)}
-          >
-            {meeting.participants.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.emoji} {person.name}
-              </option>
-            ))}
-          </select>
+            onChange={setFromId}
+            label="Кто переводит"
+            options={meeting.participants.map((person) => ({
+              value: person.id,
+              label: `${person.emoji} ${person.name}`,
+            }))}
+          />
         </div>
 
         <div className={form.field}>
-          <label className={form.label} htmlFor="transfer-to">
+          <span className={form.label}>
             Кому переводит
-          </label>
-          <select
-            id="transfer-to"
-            className={`${form.input} ${sameParty || error?.field === 'recipientId' ? form.invalid : ''}`}
+          </span>
+          <Select
+            className={sameParty || error?.field === 'recipientId' ? form.invalid : undefined}
             value={toId}
-            onChange={(event) => setToId(event.target.value)}
-          >
-            {meeting.participants.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.emoji} {person.name}
-              </option>
-            ))}
-          </select>
+            onChange={setToId}
+            label="Кому переводит"
+            options={meeting.participants.map((person) => ({
+              value: person.id,
+              label: `${person.emoji} ${person.name}`,
+            }))}
+          />
           {sameParty && <p className={form.error}>Перевод себе ничего не меняет</p>}
         </div>
 
