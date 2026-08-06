@@ -1,0 +1,32 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 8px;
+}
+
+.option {
+  width: 100%;
+  aspect-ratio: 1;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: var(--r-input);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.option:hover {
+  border-color: var(--border-strong);
+}
+
+.picked {
+  background: var(--chip-picked-bg);
+  border-color: var(--chip-picked-border);
+}
