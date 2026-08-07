@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 
+import { apiUrl } from '../../api/client'
 import type { MeetingCard as MeetingCardData } from '../../api/types'
 import { coverGradient } from '../../domain/cover'
 import { formatCardDate } from '../../domain/format'
@@ -12,7 +13,7 @@ import styles from './MeetingCard.module.css'
 export default function MeetingCard({ meeting }: { meeting: MeetingCardData }) {
   const tone = STATUS_TONES[meeting.status]
   const cover = meeting.hasCover
-    ? `url(/api/meetings/${meeting.id}/cover?v=${meeting.coverVersion})`
+    ? `url(${apiUrl(`/api/meetings/${meeting.id}/cover?v=${meeting.coverVersion}`)})`
     : coverGradient(meeting.id)
 
   return (

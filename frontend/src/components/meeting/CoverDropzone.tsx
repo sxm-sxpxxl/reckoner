@@ -1,6 +1,6 @@
 import { useRef, useState, type DragEvent } from 'react'
 
-import { ApiError } from '../../api/client'
+import { ApiError, apiUrl } from '../../api/client'
 import { useRemoveCover, useUploadCover } from '../../api/meetings'
 import { coverGradient } from '../../domain/cover'
 import { ImageError, compressImage } from '../../domain/imageFile'
@@ -76,7 +76,7 @@ export default function CoverDropzone({
       style={{
         // Без обложки — та же заглушка, что у карточки этой встречи в списке.
         background: hasCover
-          ? `center/cover url(/api/meetings/${meetingId}/cover?v=${coverVersion})`
+          ? `center/cover url(${apiUrl(`/api/meetings/${meetingId}/cover?v=${coverVersion}`)})`
           : coverGradient(meetingId),
       }}
       // Зона ведёт себя как кнопка: иначе обложку нельзя поставить
