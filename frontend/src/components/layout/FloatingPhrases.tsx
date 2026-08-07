@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef } from 'react'
 import { pickPhrases } from '../../domain/phrases'
 import styles from './FloatingPhrases.module.css'
 
-/** Сколько фраз летает одновременно. */
-const COUNT = 9
+/** Сколько фраз летает одновременно. На телефоне их меньше: экран узкий,
+ *  и девять надписей превращают фон в кашу. */
+const COUNT = window.innerWidth < 640 ? 5 : 9
 
 /** Пикселей в секунду. Медленно: это фон, а не заставка. */
 const SPEED_MIN = 12
@@ -117,7 +118,12 @@ export default function FloatingPhrases() {
             nodes.current[index] = node
           }}
           className={styles.phrase}
-          style={{ fontSize: `${22 + ((index * 7) % 24)}px` }}
+          // `min` с долей ширины экрана: на телефоне фраза в 40 пикселей
+          // не помещалась вовсе. Доля именно 4%, а не 5: при пяти самая длинная
+          // фраза набора занимала 373 пикселя из 375 — формально влезала,
+          // но растягивалась от края до края и переставала читаться как фон.
+          // При четырёх она занимает около 80% ширины.
+          style={{ fontSize: `min(${22 + ((index * 7) % 24)}px, 4vw)` }}
         >
           {text}
         </span>
