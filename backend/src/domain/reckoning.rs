@@ -4,13 +4,15 @@ use super::balance::{contributions, net_balances};
 use super::settle::{Transfer, settlement_plan};
 use super::status::MeetingStatus;
 use super::types::{EntryKind, MeetingFacts, ParticipantId};
+use super::wallets::fold_into_wallets;
 
 /// Всё, что считается по фактам встречи.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reckoning {
     /// «внёс N ₽» — сумма оплаченных расходов.
     pub contributed: BTreeMap<ParticipantId, i64>,
-    /// Баланс: плюс — ему должны, минус — он должен.
+    /// Баланс кошелька: плюс — ему должны, минус — он должен. У того, за кого
+    /// платят, всегда 0: его баланс прибавлен к балансу плательщика.
     pub net: BTreeMap<ParticipantId, i64>,
     /// Переводы, которые закроют встречу в ноль.
     pub settlement: Vec<Transfer>,
@@ -24,7 +26,9 @@ pub struct Reckoning {
 /// Единственная точка входа для слоя API: по фактам встречи считает всё,
 /// что нужно отдать клиенту.
 pub fn reckon(facts: MeetingFacts) -> Reckoning {
-    let net = net_balances(facts);
+    // Балансы считаются по людям, а сводятся по кошелькам: иначе в плане
+    // появились бы переводы от тех, за кого платят другие.
+    let net = fold_into_wallets(facts.participants, &net_balances(facts));
     let settlement = settlement_plan(facts.participants, &net);
     let status = MeetingStatus::from_plan(facts.participants.len(), &settlement);
 
@@ -56,7 +60,7 @@ pub fn reckon(facts: MeetingFacts) -> Reckoning {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::testing::{expense, participants, transfer};
+    use crate::domain::testing::{expense, paid_by, participants, transfer};
 
     #[test]
     fn reports_zeroes_without_participants() {
@@ -194,5 +198,42 @@ mod tests {
         assert_eq!(reckoning.net[&people[0].id], 0);
         assert!(reckoning.settlement.is_empty());
         assert_eq!(reckoning.status, MeetingStatus::Settled);
+    }
+
+    #[test]
+    fn covered_participant_never_appears_in_the_plan() {
+        // Женя платит за Аню. Расход Жени 400 на четверых — по 100.
+        let people = participants(4);
+        let (katya, zhenya, veronika) = (people[0], people[2], people[3]);
+        let anya = paid_by(people[1], zhenya);
+        let people = vec![katya, anya, zhenya, veronika];
+        let entries = vec![expense(zhenya, 400)];
+
+        let reckoning = reckon(MeetingFacts {
+            participants: &people,
+            entries: &entries,
+        });
+
+        assert_eq!(reckoning.contributed[&zhenya.id], 400);
+        assert_eq!(reckoning.net[&anya.id], 0);
+        assert_eq!(reckoning.net[&zhenya.id], 200);
+        assert_eq!(reckoning.net[&katya.id], -100);
+        assert_eq!(reckoning.net[&veronika.id], -100);
+        assert_eq!(
+            reckoning.settlement,
+            vec![
+                Transfer {
+                    from: katya.id,
+                    to: zhenya.id,
+                    amount: 100
+                },
+                Transfer {
+                    from: veronika.id,
+                    to: zhenya.id,
+                    amount: 100
+                },
+            ]
+        );
+        assert_eq!(reckoning.status, MeetingStatus::Attention(2));
     }
 }

@@ -4,7 +4,7 @@ use proptest::prelude::*;
 
 use super::testing::{expense_with_weights, participant, transfer};
 use super::types::{Entry, MeetingFacts, Participant};
-use super::{net_balances, settlement_plan};
+use super::{fold_into_wallets, net_balances, settlement_plan, wallet_of};
 
 /// Черновик записи в терминах индексов участников. Proptest генерирует любые
 /// индексы, а `build` приводит их к существующим по модулю — так любой
@@ -43,8 +43,31 @@ fn draft_strategy() -> impl Strategy<Value = Draft> {
     ]
 }
 
-fn roster(count: usize) -> Vec<Participant> {
-    (0..count as i32).map(participant).collect()
+/// Ссылки «платит за» по индексам. Редкие: иначе почти все оказывались бы
+/// в чужих кошельках и проверять было бы нечего.
+fn links_strategy() -> impl Strategy<Value = Vec<Option<usize>>> {
+    prop::collection::vec(prop::option::weighted(0.3, 0usize..64), 1..8)
+}
+
+fn roster(count: usize, links: &[Option<usize>]) -> Vec<Participant> {
+    let plain: Vec<Participant> = (0..count as i32).map(participant).collect();
+
+    plain
+        .iter()
+        .enumerate()
+        .map(|(index, person)| {
+            // Ссылку на себя запрещает CHECK в схеме — домен её не увидит.
+            // Цепочки и круги не запрещает ничего, кроме API, поэтому домен
+            // обязан их пережить.
+            let payer = links[index % links.len()]
+                .map(|target| target % count)
+                .filter(|target| *target != index);
+            Participant {
+                paid_by: payer.map(|target| plain[target].id),
+                ..*person
+            }
+        })
+        .collect()
 }
 
 fn build(people: &[Participant], drafts: &[Draft]) -> Vec<Entry> {
@@ -85,27 +108,55 @@ fn build(people: &[Participant], drafts: &[Draft]) -> Vec<Entry> {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
-    /// Сумма балансов всегда ноль. Инвариант обеспечивает целочисленная
-    /// раздача остатка долей, и именно на нём держится способность плана
+    /// Сумма балансов всегда ноль — и до свёртки по кошелькам, и после.
+    /// Инвариант обеспечивает целочисленная раздача остатка долей, свёртка
+    /// только перекладывает рубли, и именно на нём держится способность плана
     /// закрыть встречу.
     #[test]
-    fn balances_sum_to_zero(
+    fn balances_sum_to_zero_before_and_after_folding(
         count in 1usize..8,
+        links in links_strategy(),
         drafts in prop::collection::vec(draft_strategy(), 0..12),
     ) {
-        let people = roster(count);
+        let people = roster(count, &links);
         let entries = build(&people, &drafts);
 
         let net = net_balances(MeetingFacts {
             participants: &people,
             entries: &entries,
         });
-
         prop_assert_eq!(net.values().sum::<i64>(), 0);
+
+        let folded = fold_into_wallets(&people, &net);
+        prop_assert_eq!(folded.values().sum::<i64>(), 0);
     }
 
-    /// План сводит каждый баланс в ноль, и переводов в нём строго меньше, чем
-    /// участников: это и означает «минимальный», а не «все всем».
+    /// У того, за кого действительно платят, после свёртки ноль: в плане
+    /// переводов его не будет.
+    #[test]
+    fn covered_participants_end_at_zero(
+        count in 1usize..8,
+        links in links_strategy(),
+        drafts in prop::collection::vec(draft_strategy(), 0..12),
+    ) {
+        let people = roster(count, &links);
+        let entries = build(&people, &drafts);
+        let net = net_balances(MeetingFacts {
+            participants: &people,
+            entries: &entries,
+        });
+
+        let folded = fold_into_wallets(&people, &net);
+
+        for person in &people {
+            if wallet_of(person, &people) != person.id {
+                prop_assert_eq!(folded[&person.id], 0, "у оплачиваемого остался баланс");
+            }
+        }
+    }
+
+    /// План сводит каждый баланс кошелька в ноль, и переводов в нём строго
+    /// меньше, чем участников: это и означает «минимальный», а не «все всем».
     ///
     /// Граница следует из устройства алгоритма: на каждом шаге закрывается хотя
     /// бы одна сторона, а последний шаг закрывает обе, поэтому переводов не
@@ -113,14 +164,18 @@ proptest! {
     #[test]
     fn settlement_plan_zeroes_every_balance(
         count in 1usize..8,
+        links in links_strategy(),
         drafts in prop::collection::vec(draft_strategy(), 0..12),
     ) {
-        let people = roster(count);
+        let people = roster(count, &links);
         let entries = build(&people, &drafts);
-        let net = net_balances(MeetingFacts {
-            participants: &people,
-            entries: &entries,
-        });
+        let net = fold_into_wallets(
+            &people,
+            &net_balances(MeetingFacts {
+                participants: &people,
+                entries: &entries,
+            }),
+        );
 
         let plan = settlement_plan(&people, &net);
 

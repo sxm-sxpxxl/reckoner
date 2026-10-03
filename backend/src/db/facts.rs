@@ -52,6 +52,8 @@ pub fn build(
         .map(|row| Participant {
             id: ParticipantId(row.id),
             position: row.position,
+            // Колонки `paid_by` в строке пока нет.
+            paid_by: None,
         })
         .collect();
 

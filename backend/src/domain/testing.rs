@@ -14,6 +14,7 @@ pub fn participant(position: i32) -> Participant {
     Participant {
         id: ParticipantId(Uuid::from_u128(position as u128 + 1)),
         position,
+        paid_by: None,
     }
 }
 
@@ -67,5 +68,13 @@ pub fn pin(participant: Participant, rubles: i64) -> FixedShare {
     FixedShare {
         participant_id: participant.id,
         rubles,
+    }
+}
+
+/// Тот же участник, но за него платит `payer`.
+pub fn paid_by(person: Participant, payer: Participant) -> Participant {
+    Participant {
+        paid_by: Some(payer.id),
+        ..person
     }
 }

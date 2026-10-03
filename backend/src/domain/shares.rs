@@ -398,10 +398,12 @@ mod tests {
         let first = Participant {
             id: ParticipantId(Uuid::from_u128(9)),
             position: 0,
+            paid_by: None,
         };
         let second = Participant {
             id: ParticipantId(Uuid::from_u128(2)),
             position: 1,
+            paid_by: None,
         };
         let people = vec![first, second];
         let entry = expense(first, 3);

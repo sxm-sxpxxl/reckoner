@@ -13,6 +13,7 @@ mod properties;
 pub mod shares;
 pub mod status;
 pub mod types;
+pub mod wallets;
 
 #[cfg(test)]
 pub mod testing;
@@ -25,3 +26,4 @@ pub use status::MeetingStatus;
 pub use types::{
     Entry, EntryKind, FULL_QUARTERS, FixedShare, MeetingFacts, Participant, ParticipantId, Weight,
 };
+pub use wallets::{fold_into_wallets, wallet_of};
