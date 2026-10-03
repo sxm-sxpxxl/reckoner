@@ -29,8 +29,12 @@ underpaid, the list of transfers they need to make to come out even — recomput
 - Inside a meetup: cover image, title, description, participants, and the history of operations
   sorted by time. Each entry records who paid, how much, what for, and — for a transfer — who
   received it.
-- Expenses can be split unevenly: a participant's share can be set to 1, ¾, ½, ¼ or 0. One form
-  can also record several payers at once, becoming one expense per payer.
+- Expenses can be split exactly: leave a participant's field empty to share the rest evenly,
+  type their amount — several dishes add up right in the field, `390 + 1200 + 624` — or switch
+  them off. If the typed amounts miss the bill by up to a quarter (tips, a discount, a slip), the
+  difference is spread in proportion.
+- Within a meetup one participant can pay for others, a couple for instance: their balances fold
+  into the payer's, and only the payer shows up in the transfers.
 - Below the history, the outstanding transfers needed to close the meetup at par, in three
   views: a per-debtor list, a debtor/creditor matrix, and a balance bar chart.
 - All amounts are whole roubles. Splitting is integer arithmetic with the remainder handed out by
