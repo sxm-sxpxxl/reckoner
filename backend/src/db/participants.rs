@@ -31,7 +31,7 @@ pub async fn insert(
              select coalesce(max(position), -1) + 1 as value \
              from participants where meeting_id = $1 \
          ) as next \
-         returning id, meeting_id, name, emoji, color_index, position, created_at",
+         returning id, meeting_id, name, emoji, color_index, position, paid_by, created_at",
     )
     .bind(meeting_id)
     .bind(name)
@@ -48,7 +48,7 @@ pub async fn list_for_meeting(
     meeting_id: Uuid,
 ) -> Result<Vec<ParticipantRow>, sqlx::Error> {
     sqlx::query_as(
-        "select id, meeting_id, name, emoji, color_index, position, created_at \
+        "select id, meeting_id, name, emoji, color_index, position, paid_by, created_at \
          from participants where meeting_id = $1 order by position",
     )
     .bind(meeting_id)
@@ -67,7 +67,7 @@ pub async fn list_for_meetings(
     meeting_ids: &[Uuid],
 ) -> Result<Vec<ParticipantRow>, sqlx::Error> {
     sqlx::query_as(
-        "select id, meeting_id, name, emoji, color_index, position, created_at \
+        "select id, meeting_id, name, emoji, color_index, position, paid_by, created_at \
          from participants where meeting_id = any($1) \
          order by meeting_id, position",
     )
@@ -86,7 +86,7 @@ pub async fn update(
 ) -> Result<Option<ParticipantRow>, sqlx::Error> {
     sqlx::query_as(
         "update participants set name = $2, emoji = $3 where id = $1 \
-         returning id, meeting_id, name, emoji, color_index, position, created_at",
+         returning id, meeting_id, name, emoji, color_index, position, paid_by, created_at",
     )
     .bind(id)
     .bind(name)
@@ -95,8 +95,27 @@ pub async fn update(
     .await
 }
 
+/// Назначает или снимает плательщика. Отдельно от `update`, потому что имя и
+/// эмодзи перезаписываются всегда, а плательщик — только когда его поменяли.
+pub async fn set_paid_by(
+    conn: &mut PgConnection,
+    id: Uuid,
+    paid_by: Option<Uuid>,
+) -> Result<Option<ParticipantRow>, sqlx::Error> {
+    sqlx::query_as(
+        "update participants set paid_by = $2 where id = $1 \
+         returning id, meeting_id, name, emoji, color_index, position, paid_by, created_at",
+    )
+    .bind(id)
+    .bind(paid_by)
+    .fetch_optional(conn)
+    .await
+}
+
 /// Каскады уносят все записи, где участник плательщик или получатель, и его
-/// доли — это требование дизайна, а не побочный эффект.
+/// доли — это требование дизайна, а не побочный эффект. Тех, за кого он
+/// платил, база отвязывает сама (`on delete set null`): они снова платят сами
+/// за себя.
 pub async fn delete(conn: &mut PgConnection, id: Uuid) -> Result<bool, sqlx::Error> {
     let result = sqlx::query("delete from participants where id = $1")
         .bind(id)

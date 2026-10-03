@@ -86,7 +86,6 @@ pub fn participant(row: &ParticipantRow) -> Participant {
     Participant {
         id: ParticipantId(row.id),
         position: row.position,
-        // Колонка `paid_by` в строке пока не читается.
-        paid_by: None,
+        paid_by: row.paid_by.map(ParticipantId),
     }
 }

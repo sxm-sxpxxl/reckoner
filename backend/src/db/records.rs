@@ -28,6 +28,8 @@ pub struct ParticipantRow {
     pub emoji: String,
     pub color_index: i16,
     pub position: i32,
+    /// Кто платит за участника; `None` — платит сам.
+    pub paid_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 

@@ -38,6 +38,14 @@ pub fn participant_deleted(name: &str) -> String {
     format!("Участник удалён: {name}")
 }
 
+pub fn payer_assigned(name: &str, payer: &str) -> String {
+    format!("{name}: теперь платит {payer}")
+}
+
+pub fn payer_removed(name: &str) -> String {
+    format!("{name}: снова платит за себя")
+}
+
 pub fn expense_added(payer: &str, description: &str, amount: i64) -> String {
     format!(
         "{payer} добавляет расход «{description}» — {}",
@@ -103,5 +111,11 @@ mod tests {
     fn entry_lines_name_the_amount() {
         assert_eq!(entry_updated(8400), "Запись изменена: 8\u{a0}400\u{a0}₽");
         assert_eq!(entry_deleted(2100), "Удалена запись на 2\u{a0}100\u{a0}₽");
+    }
+
+    #[test]
+    fn payer_lines_do_not_mark_gender() {
+        assert_eq!(payer_assigned("Аня", "Женя"), "Аня: теперь платит Женя");
+        assert_eq!(payer_removed("Аня"), "Аня: снова платит за себя");
     }
 }

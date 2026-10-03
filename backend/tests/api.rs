@@ -429,6 +429,7 @@ async fn server_assigns_position_and_colour() {
         participants::CreateParticipant {
             name: "  Настя  ".to_owned(),
             emoji: Some("🦊".to_owned()),
+            paid_by_id: None,
         },
     )
     .await
@@ -454,6 +455,7 @@ async fn participant_without_emoji_gets_the_default_one() {
         participants::CreateParticipant {
             name: "Лёша".to_owned(),
             emoji: None,
+            paid_by_id: None,
         },
     )
     .await
@@ -480,6 +482,7 @@ async fn blank_participant_name_is_rejected() {
         participants::CreateParticipant {
             name: "   ".to_owned(),
             emoji: None,
+            paid_by_id: None,
         },
     )
     .await
@@ -501,6 +504,7 @@ async fn participant_in_a_missing_meeting_is_not_found() {
         participants::CreateParticipant {
             name: "Настя".to_owned(),
             emoji: None,
+            paid_by_id: None,
         },
     )
     .await
@@ -522,6 +526,7 @@ async fn patch_keeps_the_untouched_field() {
         participants::UpdateParticipant {
             name: Some("Анастасия".to_owned()),
             emoji: None,
+            paid_by_id: None,
         },
     )
     .await
@@ -551,6 +556,7 @@ async fn participant_of_another_meeting_is_not_found() {
         participants::UpdateParticipant {
             name: Some("Кто-то".to_owned()),
             emoji: None,
+            paid_by_id: None,
         },
     )
     .await
@@ -1612,4 +1618,255 @@ async fn patching_only_the_amount_checks_the_stored_shares() {
     .expect_err("сумма меньше вписанного");
 
     assert_eq!(validation_field(&error), "shares");
+}
+
+/// Назначает или снимает плательщика через ту же ручку, что и клиент.
+async fn set_payer(
+    conn: &mut sqlx::PgConnection,
+    meeting_id: Uuid,
+    participant: Uuid,
+    payer: Option<Uuid>,
+) -> Result<backend::api::view::MeetingView, ApiError> {
+    participants::update_participant(
+        conn,
+        meeting_id,
+        participant,
+        participants::UpdateParticipant {
+            name: None,
+            emoji: None,
+            paid_by_id: Some(payer),
+        },
+    )
+    .await
+}
+
+/// Ресторан из спеки `2026-10-03-exact-split-design.md`: шестеро в порядке
+/// добавления — Катя, Алексей, Настя, Аня, Женя, Вероника.
+async fn seed_restaurant(conn: &mut sqlx::PgConnection) -> (Uuid, Vec<Uuid>) {
+    let meeting = db::meetings::insert(
+        &mut *conn,
+        NewMeeting {
+            title: "Ресторан".to_owned(),
+            description: String::new(),
+            emoji: "🍽️".to_owned(),
+            held_on: NaiveDate::from_ymd_opt(2026, 10, 2).expect("дата"),
+        },
+    )
+    .await
+    .expect("вставка встречи");
+
+    let mut people = Vec::new();
+    for name in ["Катя", "Алексей", "Настя", "Аня", "Женя", "Вероника"]
+    {
+        let row = db::participants::insert(&mut *conn, meeting.id, name, "🦊")
+            .await
+            .expect("вставка участника");
+        people.push(row.id);
+    }
+
+    (meeting.id, people)
+}
+
+#[tokio::test]
+async fn restaurant_bill_settles_on_the_payer() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_restaurant(&mut tx).await;
+    let (katya, alexey, nastya, anya, zhenya, veronika) = (
+        people[0], people[1], people[2], people[3], people[4], people[5],
+    );
+
+    set_payer(&mut tx, meeting_id, nastya, Some(alexey))
+        .await
+        .expect("Настя → Алексей");
+    set_payer(&mut tx, meeting_id, anya, Some(zhenya))
+        .await
+        .expect("Аня → Женя");
+
+    let view = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        expense_body(
+            zhenya,
+            11996,
+            &[
+                (katya, 2214),
+                (alexey, 3440),
+                (nastya, 0),
+                (anya, 0),
+                (zhenya, 3430),
+                (veronika, 2906),
+            ],
+        ),
+    )
+    .await
+    .expect("счёт за ресторан");
+
+    let net = |id: Uuid| {
+        view.participants
+            .iter()
+            .find(|person| person.id == id)
+            .expect("участник")
+            .net_rubles
+    };
+    assert_eq!(net(zhenya), 8564);
+    assert_eq!(net(nastya), 0);
+    assert_eq!(net(anya), 0);
+
+    let plan: Vec<(Uuid, Uuid, i64)> = view
+        .settlement
+        .iter()
+        .map(|transfer| (transfer.from_id, transfer.to_id, transfer.amount_rubles))
+        .collect();
+    assert_eq!(
+        plan,
+        vec![
+            (alexey, zhenya, 3442),
+            (veronika, zhenya, 2907),
+            (katya, zhenya, 2215)
+        ]
+    );
+    assert_eq!(view.participants[2].paid_by_id, Some(alexey));
+}
+
+#[tokio::test]
+async fn participant_can_join_with_a_payer() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let view = participants::add_participant(
+        &mut tx,
+        meeting_id,
+        participants::CreateParticipant {
+            name: "Аня".to_owned(),
+            emoji: None,
+            paid_by_id: Some(people[1]),
+        },
+    )
+    .await
+    .expect("добавление с плательщиком");
+
+    assert_eq!(view.participants[4].paid_by_id, Some(people[1]));
+    // Лог новыми сверху: сначала строка о плательщике, под ней — о добавлении.
+    assert_eq!(view.log[0].text, "Аня: теперь платит Влад");
+    assert_eq!(view.log[1].text, "Аня присоединяется к встрече");
+}
+
+#[tokio::test]
+async fn null_payer_means_paying_for_oneself_again() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    set_payer(&mut tx, meeting_id, people[0], Some(people[1]))
+        .await
+        .expect("назначение");
+    let view = set_payer(&mut tx, meeting_id, people[0], None)
+        .await
+        .expect("снятие");
+
+    assert_eq!(view.participants[0].paid_by_id, None);
+    assert_eq!(view.log[0].text, "Настя: снова платит за себя");
+}
+
+#[tokio::test]
+async fn renaming_keeps_the_payer() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    set_payer(&mut tx, meeting_id, people[0], Some(people[1]))
+        .await
+        .expect("назначение");
+    let view = participants::update_participant(
+        &mut tx,
+        meeting_id,
+        people[0],
+        participants::UpdateParticipant {
+            name: Some("Анастасия".to_owned()),
+            emoji: None,
+            paid_by_id: None,
+        },
+    )
+    .await
+    .expect("переименование");
+
+    assert_eq!(view.participants[0].paid_by_id, Some(people[1]));
+    assert_eq!(view.log[0].text, "Профиль участника обновлён: Анастасия");
+}
+
+#[tokio::test]
+async fn participant_cannot_pay_for_oneself() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let error = set_payer(&mut tx, meeting_id, people[0], Some(people[0]))
+        .await
+        .expect_err("сам себе плательщик");
+
+    assert_eq!(validation_field(&error), "paidById");
+}
+
+#[tokio::test]
+async fn covering_payer_from_another_meeting_is_rejected() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    let (_, strangers) = seed_dacha(&mut tx).await;
+
+    let error = set_payer(&mut tx, meeting_id, people[0], Some(strangers[0]))
+        .await
+        .expect_err("плательщик из другой встречи");
+
+    assert_eq!(validation_field(&error), "paidById");
+}
+
+#[tokio::test]
+async fn covered_participant_cannot_pay_for_others() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    set_payer(&mut tx, meeting_id, people[0], Some(people[1]))
+        .await
+        .expect("Настя → Влад");
+    let error = set_payer(&mut tx, meeting_id, people[2], Some(people[0]))
+        .await
+        .expect_err("Егор → Настя дал бы цепочку");
+
+    assert_eq!(validation_field(&error), "paidById");
+}
+
+#[tokio::test]
+async fn payer_of_others_cannot_get_a_payer() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    set_payer(&mut tx, meeting_id, people[0], Some(people[1]))
+        .await
+        .expect("Настя → Влад");
+    let error = set_payer(&mut tx, meeting_id, people[1], Some(people[2]))
+        .await
+        .expect_err("Влад → Егор дал бы цепочку");
+
+    assert_eq!(validation_field(&error), "paidById");
+}
+
+#[tokio::test]
+async fn removing_the_payer_frees_the_covered() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    set_payer(&mut tx, meeting_id, people[0], Some(people[1]))
+        .await
+        .expect("Настя → Влад");
+    let view = participants::remove_participant(&mut tx, meeting_id, people[1])
+        .await
+        .expect("удаление Влада");
+
+    assert_eq!(view.participants[0].paid_by_id, None);
 }

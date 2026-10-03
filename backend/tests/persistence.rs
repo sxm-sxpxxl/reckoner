@@ -304,6 +304,51 @@ async fn updates_and_deletes_a_participant() {
 }
 
 #[tokio::test]
+async fn stores_a_payer_and_forgets_it_when_the_payer_leaves() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let anya = participants::insert(&mut tx, meeting_id, "Аня", "🧞")
+        .await
+        .expect("Аня");
+    let zhenya = participants::insert(&mut tx, meeting_id, "Женя", "🐨")
+        .await
+        .expect("Женя");
+
+    let covered = participants::set_paid_by(&mut tx, anya.id, Some(zhenya.id))
+        .await
+        .expect("назначение")
+        .expect("участник существует");
+    assert_eq!(covered.paid_by, Some(zhenya.id));
+
+    participants::delete(&mut tx, zhenya.id)
+        .await
+        .expect("удаление");
+
+    let listed = participants::list_for_meeting(&mut tx, meeting_id)
+        .await
+        .expect("список");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].paid_by, None, "Аня должна снова платить сама");
+}
+
+#[tokio::test]
+async fn schema_rejects_paying_for_oneself() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let person = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("участник");
+
+    let result = participants::set_paid_by(&mut tx, person.id, Some(person.id)).await;
+
+    assert!(result.is_err(), "ссылка на себя записалась");
+}
+
+#[tokio::test]
 async fn position_never_reuses_a_number_after_a_deletion() {
     let pool = test_pool().await;
     let mut tx = support::begin(&pool).await;

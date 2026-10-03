@@ -60,6 +60,42 @@ pub fn belongs_to_meeting<'a>(
         .ok_or_else(|| ApiError::validation(field, "участник не найден в этой встрече"))
 }
 
+/// Плательщик за участника. `participant_id` — `None`, пока участника ещё нет
+/// (его добавляют сразу с плательщиком). Цепочек не бывает: у плательщика
+/// нет своего плательщика, а у того, за кого платят, нет своих оплачиваемых.
+pub fn paid_by(
+    participants: &[ParticipantRow],
+    participant_id: Option<Uuid>,
+    payer_id: Uuid,
+) -> Result<Uuid, ApiError> {
+    let payer = belongs_to_meeting(participants, payer_id, "paidById")?;
+
+    if Some(payer.id) == participant_id {
+        return Err(ApiError::validation(
+            "paidById",
+            "нельзя выбрать плательщиком самого участника",
+        ));
+    }
+
+    if payer.paid_by.is_some() {
+        return Err(ApiError::validation(
+            "paidById",
+            "за выбранного плательщика уже платит другой участник",
+        ));
+    }
+
+    if let Some(id) = participant_id
+        && participants.iter().any(|row| row.paid_by == Some(id))
+    {
+        return Err(ApiError::validation(
+            "paidById",
+            "участник уже платит за других — сначала снимите эту связь",
+        ));
+    }
+
+    Ok(payer.id)
+}
+
 /// Явные доли, как их прислал клиент, в том виде, в каком они хранятся:
 /// пары `(участник, рубли)`. `0` — участник исключён из расхода. Кого в списке
 /// нет, тот делит остаток поровну.

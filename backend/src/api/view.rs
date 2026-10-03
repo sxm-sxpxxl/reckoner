@@ -59,10 +59,13 @@ pub struct ParticipantView {
     pub emoji: String,
     pub color_index: i16,
     pub position: i32,
+    /// Кто платит за участника; `null` — платит сам.
+    pub paid_by_id: Option<Uuid>,
     /// «внёс N ₽»: только оплаченные расходы, отправленные переводы сюда
     /// не входят.
     pub contributed_rubles: i64,
-    /// Баланс: плюс — должны ему, минус — должен он.
+    /// Баланс кошелька: плюс — должны ему, минус — должен он. У того, за кого
+    /// платят, всегда 0: его баланс прибавлен к балансу плательщика.
     pub net_rubles: i64,
 }
 
@@ -183,6 +186,7 @@ pub fn meeting_view(
                 emoji: row.emoji.clone(),
                 color_index: row.color_index,
                 position: row.position,
+                paid_by_id: row.paid_by,
                 contributed_rubles: lookup(&reckoning.contributed, row.id),
                 net_rubles: lookup(&reckoning.net, row.id),
             })
@@ -325,6 +329,7 @@ mod tests {
             emoji: "🦊".to_owned(),
             color_index: i16::try_from(position).expect("индекс цвета"),
             position,
+            paid_by: None,
             created_at: timestamp(23, 19),
         }
     }
@@ -481,5 +486,43 @@ mod tests {
         assert!(json.get("entries").is_none());
         assert!(json.get("log").is_none());
         assert!(json.get("settlement").is_none());
+    }
+
+    #[test]
+    fn covered_balance_is_folded_into_the_payer() {
+        // Женя платит за Аню. Расход Жени 300 на троих — по 100.
+        let meeting_id = Uuid::from_u128(5);
+        let (zhenya, anya, katya) = (
+            Uuid::from_u128(71),
+            Uuid::from_u128(72),
+            Uuid::from_u128(73),
+        );
+        let meeting = meeting_row(meeting_id);
+        let participants = vec![
+            participant_row(meeting_id, zhenya, "Женя", 0),
+            ParticipantRow {
+                paid_by: Some(zhenya),
+                ..participant_row(meeting_id, anya, "Аня", 1)
+            },
+            participant_row(meeting_id, katya, "Катя", 2),
+        ];
+        let entries = vec![expense_row(meeting_id, Uuid::from_u128(81), zhenya, 300)];
+
+        let view = meeting_view(&meeting, &participants, &entries, &[], &[]);
+        let json = serde_json::to_value(&view).expect("сериализация");
+
+        assert_eq!(
+            json["participants"][1]["paidById"],
+            serde_json::json!(zhenya.to_string())
+        );
+        assert_eq!(json["participants"][0]["paidById"], serde_json::Value::Null);
+        assert_eq!(json["participants"][0]["netRubles"], 100);
+        assert_eq!(json["participants"][1]["netRubles"], 0);
+        assert_eq!(
+            json["settlement"],
+            serde_json::json!([
+                { "fromId": katya.to_string(), "toId": zhenya.to_string(), "amountRubles": 100 },
+            ])
+        );
     }
 }
