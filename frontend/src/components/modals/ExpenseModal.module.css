@@ -1,11 +1,5 @@
-.amountInput {
-  font-family: var(--font-mono);
-  font-size: 19px;
-  font-weight: 700;
-}
-
-/* Строка «кто заплатил»: селект тянется, сумма фиксированной ширины,
-   кнопка удаления не сжимается. */
+/* Строка «кто заплатил»: селект тянется, поле суммы фиксированной ширины —
+   с запасом под кнопку «+», которая появляется у поля в фокусе. */
 .payerRow {
   display: flex;
   gap: 8px;
@@ -18,48 +12,21 @@
 }
 
 .payerAmount {
-  flex: 0 0 108px;
+  flex: 0 0 152px;
+  display: flex;
+}
+
+.amountField {
   font-family: var(--font-mono);
   font-weight: 700;
 }
 
-.dropPayer {
-  flex: none;
-  min-width: 40px;
-  min-height: 40px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
-.dropPayer:hover {
-  color: var(--debt);
-}
-
-.addPayer {
-  align-self: start;
-  border: none;
-  background: none;
-  padding: 6px 0;
-  min-height: 40px;
-  cursor: pointer;
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--link);
-}
-
-.addPayer:hover {
-  color: var(--ink);
-}
-
-.payerTotal {
+.sum {
+  margin: 0;
   font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-2);
+  font-size: 12.5px;
+  color: var(--text-3);
+  text-align: right;
 }
 
 .sharesHead {
@@ -79,6 +46,12 @@
   border: 1px solid var(--border);
   background: var(--surface);
   overflow: hidden;
+}
+
+.status {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
 }
 
 .roundingNote {

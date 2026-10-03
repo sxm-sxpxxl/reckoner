@@ -1,80 +1,114 @@
 /**
- * Живое превью долей расхода.
+ * Живое превью разбивки расхода.
  *
- * Повторяет алгоритм из `backend/src/domain/shares.rs`, и это дублирование
- * осознанное: в модалке расхода сумма против каждого имени обновляется на
- * каждый ввод, а записи ещё нет — сходить за ней на сервер нельзя.
+ * Повторяет `split_amount` и `check_split` из `backend/src/domain/shares.rs`,
+ * и это дублирование осознанное: в модалке расхода доля против каждого имени
+ * обновляется на каждый ввод, а записи ещё нет — сходить за ней на сервер нельзя.
  *
- * Источник истины при этом остаётся сервер: превью показывает, а сохраняет
- * и пересчитывает он. Расхождение поймают тесты — они берут те же числа, что
- * доменные тесты в Rust.
+ * Источник истины — сервер: превью показывает, а сохраняет и пересчитывает он.
+ * Расхождение поймают тесты: они берут те же числа, что доменные тесты в Rust.
  */
 
-/** Полная доля в четвертях. Столько же в `domain::FULL_QUARTERS`. */
-const FULL_QUARTERS = 4
+/** Вписанные суммы по участнику: `0` — исключён. Нет ключа — делит остаток поровну. */
+export type Pinned = Record<string, number>
 
-/** Доли по идентификатору участника. Отсутствие ключа — полная доля. */
-export type Quarters = Record<string, number>
-
-/** Цикл по клику на чип доли: 1 → ¾ → ½ → ¼ → 0 → 1, как в хендоффе. */
-export function nextQuarters(current: number): number {
-  return current === 0 ? FULL_QUARTERS : current - 1
-}
-
-export function previewShares(
+export function previewSplit(
   amount: number,
   /** Участники в порядке `position` — он и есть тай-брейк при раздаче остатка. */
   participantIds: string[],
-  quarters: Quarters,
+  pinned: Pinned,
 ): Record<string, number> {
-  const weights = participantIds.map((id) => quarters[id] ?? FULL_QUARTERS)
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
+  if (participantIds.length === 0) return {}
 
-  // Если исключили всех, делить не по чему. Считаем всех по полной доле —
-  // так же поступает сервер.
-  const effective = totalWeight === 0 ? weights.map(() => FULL_QUARTERS) : weights
-  const effectiveTotal = totalWeight === 0 ? FULL_QUARTERS * weights.length : totalWeight
+  const fixed = participantIds.map((id) => pinned[id])
+  const total = fixed.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+  const someoneEven = fixed.some((value) => value === undefined)
 
-  const shares: Record<string, number> = {}
+  // Правило 1: вписанные платят своё, остаток — поровну между остальными.
+  if (someoneEven && total <= amount) {
+    const rest = distribute(
+      amount - total,
+      participantIds,
+      fixed.map((value) => (value === undefined ? 1 : 0)),
+    )
 
-  if (effectiveTotal === 0) {
-    for (const id of participantIds) shares[id] = 0
-
-    return shares
+    return Object.fromEntries(
+      participantIds.map((id, index) => [id, rest[id] + (fixed[index] ?? 0)]),
+    )
   }
 
-  // Целая часть каждому, остаток рублей — тем, у кого дробная часть больше.
-  // Сравниваем не дроби, а числители: `amount * w` целое, поэтому остаток
-  // от деления и есть дробная часть, только без потери точности.
-  const remainders: { id: string; remainder: number; index: number }[] = []
-  let distributed = 0
+  // Правило 2: пропорционально вписанному; у кого суммы нет — ноль.
+  if (total > 0) return distribute(amount, participantIds, fixed.map((value) => value ?? 0))
 
-  participantIds.forEach((id, index) => {
-    const numerator = amount * effective[index]
-    const whole = Math.floor(numerator / effectiveTotal)
+  // Правило 3: исключены все — делим на всех поровну.
+  return distribute(amount, participantIds, participantIds.map(() => 1))
+}
 
-    shares[id] = whole
+/**
+ * Что сказать под списком «Делим на». `over` и `far` запрещают сохранение —
+ * сервер ответил бы на них 422.
+ */
+export type SplitStatus =
+  | { kind: 'plain' }
+  | { kind: 'rest'; rest: number; among: number }
+  | { kind: 'adjusted'; difference: number }
+  | { kind: 'over'; pinned: number }
+  | { kind: 'far'; pinned: number }
+
+export function splitStatus(amount: number, participantIds: string[], pinned: Pinned): SplitStatus {
+  const fixed = participantIds.map((id) => pinned[id])
+  const total = fixed.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+  const even = fixed.filter((value) => value === undefined).length
+  const anyPositive = fixed.some((value) => value !== undefined && value > 0)
+
+  if (even > 0) {
+    if (total > amount) return { kind: 'over', pinned: total }
+
+    // Если ничего не вписано, это обычное деление поровну, и говорить нечего.
+    return anyPositive ? { kind: 'rest', rest: amount - total, among: even } : { kind: 'plain' }
+  }
+
+  if (total === 0) return { kind: 'plain' }
+  if (4 * Math.abs(amount - total) > amount) return { kind: 'far', pinned: total }
+
+  return total === amount ? { kind: 'plain' } : { kind: 'adjusted', difference: amount - total }
+}
+
+/**
+ * Целая часть каждому, остаток по рублю тем, у кого больше дробная часть,
+ * при равенстве — по порядку. `BigInt`, потому что `amount × вес` с вписанными
+ * суммами в вес может выйти за 2^53, и тогда остатки сравнивались бы неточно.
+ */
+function distribute(amount: number, ids: string[], weights: number[]): Record<string, number> {
+  const total = weights.reduce((sum, weight) => sum + BigInt(weight), 0n)
+  const shares: Record<string, number> = {}
+  const remainders: { id: string; remainder: bigint; index: number }[] = []
+  let distributed = 0n
+
+  ids.forEach((id, index) => {
+    const numerator = BigInt(amount) * BigInt(weights[index])
+    const whole = numerator / total
+
+    shares[id] = Number(whole)
     distributed += whole
-    remainders.push({ id, remainder: numerator % effectiveTotal, index })
+    remainders.push({ id, remainder: numerator % total, index })
   })
 
   remainders.sort((left, right) =>
-    // Больший остаток вперёд; при равных — меньшая позиция.
-    right.remainder === left.remainder
+    left.remainder === right.remainder
       ? left.index - right.index
-      : right.remainder - left.remainder,
+      : right.remainder > left.remainder
+        ? 1
+        : -1,
   )
 
-  let leftover = amount - distributed
+  let leftover = BigInt(amount) - distributed
 
   for (const entry of remainders) {
-    if (leftover <= 0) break
-    // Участник с нулевым весом не должен получить рубль остатка: он не делит
-    // этот расход вовсе.
-    if (effective[entry.index] === 0) continue
+    if (leftover <= 0n) break
 
     shares[entry.id] += 1
-    leftover -= 1
+    leftover -= 1n
   }
 
   return shares

@@ -1,0 +1,39 @@
+.wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.wrap > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Плюс нужен только во время ввода: на цифровой клавиатуре телефона его нет. */
+.plus {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--wash-1);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.wrap:focus-within .plus {
+  display: inline-flex;
+}
+
+.plus:active {
+  transform: scale(0.9);
+}

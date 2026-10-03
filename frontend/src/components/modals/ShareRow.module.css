@@ -9,9 +9,29 @@
   border-bottom: 1px solid var(--divider);
 }
 
-.name {
+/* Аватар и имя — одна кнопка: тап по человеку включает и выключает его. */
+.who {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.text {
+  min-width: 0;
+  display: grid;
+}
+
+.name {
   font-size: 14px;
   font-weight: 600;
   overflow: hidden;
@@ -19,48 +39,41 @@
   white-space: nowrap;
 }
 
-.amount {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 700;
+.caption {
+  font-size: 12px;
+  color: var(--text-3);
 }
 
-.muted {
-  color: var(--text-muted);
+/* Выключенный приглушён, но не спрятан: его должно быть видно, чтобы вернуть. */
+.excluded .who {
+  opacity: 0.45;
 }
 
-.chip {
-  flex: none;
-  min-width: 44px;
+.money {
+  flex: 0 0 152px;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.input {
   min-height: 40px;
-  padding: 6px 10px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  padding: 8px 10px;
   font-family: var(--font-mono);
-  font-size: 12.5px;
   font-weight: 700;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.1s ease;
+  text-align: right;
 }
 
-/* Доля меняется по клику, и подтверждение нужно мгновенное: цифра на чипе
-   мелкая, без отклика не всегда понятно, засчиталось ли нажатие. */
-.chip:active {
-  transform: scale(0.9);
+.result {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
 }
 
-.partial {
-  background: var(--chip-partial-bg);
-  border-color: var(--chip-partial-border);
-}
-
-.zero {
-  background: var(--wash-1);
-  border-color: var(--border);
+.dash {
+  flex: 0 0 152px;
+  padding-right: 12px;
+  text-align: right;
+  font-family: var(--font-mono);
   color: var(--text-muted);
 }

@@ -126,7 +126,7 @@ export function useRemoveParticipant(meetingId: string) {
 
 export interface ShareBody {
   participantId: string
-  weightQuarters: number
+  rubles: number
 }
 
 export interface EntryBody {

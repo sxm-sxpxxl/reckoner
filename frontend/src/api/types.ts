@@ -26,8 +26,9 @@ export interface Participant extends ParticipantChip {
 
 export interface Share {
   participantId: string
-  /** 0..3. Полной доли здесь не бывает: её отсутствие и есть полная доля. */
-  weightQuarters: number
+  /** `0` — исключён из расхода, больше нуля — вписанная сумма. Кого в списке
+   *  нет, тот делит остаток поровну. */
+  rubles: number
 }
 
 export interface Entry {
