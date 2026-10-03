@@ -136,7 +136,12 @@ export default function MeetingPage() {
       {modal?.kind === 'meeting' && <MeetingFormModal meeting={data} onClose={close} />}
 
       {modal?.kind === 'participant' && (
-        <ParticipantModal meetingId={id} participant={modal.participant} onClose={close} />
+        <ParticipantModal
+          meetingId={id}
+          participant={modal.participant}
+          people={data.participants}
+          onClose={close}
+        />
       )}
 
       {modal?.kind === 'expense' && (

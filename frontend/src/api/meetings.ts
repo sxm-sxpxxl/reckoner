@@ -102,6 +102,9 @@ export function useDeleteMeeting() {
 export interface ParticipantBody {
   name?: string
   emoji?: string
+  /** Кто платит за участника; `null` — платит сам. На правке отсутствие поля
+   *  значит «не менять», поэтому форма шлёт его всегда. */
+  paidById?: string | null
 }
 
 export function useAddParticipant(meetingId: string) {

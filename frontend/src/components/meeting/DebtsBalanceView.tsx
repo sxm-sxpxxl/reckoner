@@ -6,7 +6,14 @@ import styles from './DebtsBalanceView.module.css'
  *  тысяч выглядел бы как ноль. */
 const MIN_PERCENT = 1.2
 
-export default function DebtsBalanceView({ participants }: { participants: Participant[] }) {
+export default function DebtsBalanceView({
+  participants,
+  nameOf,
+}: {
+  participants: Participant[]
+  /** Подпись кошелька: «Женя + Аня». */
+  nameOf: (person: Participant) => string
+}) {
   const scale = Math.max(...participants.map((person) => Math.abs(person.netRubles)), 1)
 
   return (
@@ -20,7 +27,7 @@ export default function DebtsBalanceView({ participants }: { participants: Parti
           <div key={person.id} className={styles.row}>
             <div className={styles.head}>
               <span className={styles.name}>
-                {person.emoji} {person.name}
+                {person.emoji} {nameOf(person)}
               </span>
               <span
                 className={styles.value}

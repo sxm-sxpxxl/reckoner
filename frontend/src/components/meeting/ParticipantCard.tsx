@@ -18,12 +18,20 @@ function balanceLine(net: number): { text: string; color: string } {
 
 export default function ParticipantCard({
   participant,
+  payer,
+  covers,
   onEdit,
 }: {
   participant: Participant
+  /** Кто платит за участника — тогда вместо баланса «платит Женя». */
+  payer?: Participant
+  /** За кого платит участник — подпись «+ Аня» рядом с именем. */
+  covers: Participant[]
   onEdit: () => void
 }) {
-  const balance = balanceLine(participant.netRubles)
+  const balance = payer
+    ? { text: `платит ${payer.name}`, color: 'var(--text-3)' }
+    : balanceLine(participant.netRubles)
 
   return (
     <div className={styles.card}>
@@ -35,9 +43,17 @@ export default function ParticipantCard({
       />
 
       <div className={styles.body}>
-        <div className={styles.name}>{participant.name}</div>
+        <div className={styles.name}>
+          {participant.name}
+          {covers.length > 0 && (
+            <span className={styles.covers}> + {covers.map((person) => person.name).join(', ')}</span>
+          )}
+        </div>
         <div className={styles.contributed}>внёс {formatRubles(participant.contributedRubles)}</div>
-        <div className={styles.balance} style={{ color: balance.color }}>
+        <div
+          className={`${styles.balance} ${payer ? styles.payer : ''}`}
+          style={{ color: balance.color }}
+        >
           {balance.text}
         </div>
       </div>

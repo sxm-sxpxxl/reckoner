@@ -1,4 +1,5 @@
 import type { Participant } from '../../api/types'
+import { coveredBy, payerOf } from '../../domain/wallets'
 import Button from '../ui/Button'
 import ParticipantCard from './ParticipantCard'
 import styles from './ParticipantsSection.module.css'
@@ -29,6 +30,8 @@ export default function ParticipantsSection({
             <ParticipantCard
               key={participant.id}
               participant={participant}
+              payer={payerOf(participant, participants)}
+              covers={coveredBy(participant, participants)}
               onEdit={() => onEdit(participant)}
             />
           ))}

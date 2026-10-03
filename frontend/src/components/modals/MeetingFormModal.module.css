@@ -45,3 +45,16 @@
 .footSpacer {
   margin-left: auto;
 }
+
+/* Поле, которое сейчас нельзя менять: выглядит как поле, но не откликается. */
+.readonly {
+  display: flex;
+  align-items: center;
+  color: var(--text-3);
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}

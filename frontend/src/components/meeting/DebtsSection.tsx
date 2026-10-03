@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 
-import type { Meeting, Transfer } from '../../api/types'
+import type { Meeting, Participant, Transfer } from '../../api/types'
+import { payerOf, walletName } from '../../domain/wallets'
 import SegmentedControl from '../ui/SegmentedControl'
 import DebtsBalanceView from './DebtsBalanceView'
 import DebtsListView from './DebtsListView'
@@ -29,6 +30,14 @@ export default function DebtsSection({
     [meeting.participants],
   )
 
+  // Матрица и полосы — по кошелькам: у тех, за кого платят, баланс всегда 0,
+  // и пустые строки только мешали бы.
+  const wallets = useMemo(
+    () => meeting.participants.filter((person) => !payerOf(person, meeting.participants)),
+    [meeting.participants],
+  )
+  const nameOf = (person: Participant) => walletName(person, meeting.participants)
+
   const settled = meeting.settlement.length === 0 && meeting.entries.length > 0
 
   return (
@@ -54,9 +63,9 @@ export default function DebtsSection({
       ) : view === 'people' ? (
         <DebtsListView settlement={meeting.settlement} people={people} onSettle={onSettle} />
       ) : view === 'table' ? (
-        <DebtsTableView settlement={meeting.settlement} participants={meeting.participants} />
+        <DebtsTableView settlement={meeting.settlement} participants={wallets} nameOf={nameOf} />
       ) : (
-        <DebtsBalanceView participants={meeting.participants} />
+        <DebtsBalanceView participants={wallets} nameOf={nameOf} />
       )}
     </section>
   )

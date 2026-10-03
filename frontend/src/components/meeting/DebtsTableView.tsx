@@ -13,9 +13,12 @@ import styles from './DebtsTableView.module.css'
 export default function DebtsTableView({
   settlement,
   participants,
+  nameOf,
 }: {
   settlement: Transfer[]
   participants: Participant[]
+  /** Подпись кошелька: «Женя + Аня». */
+  nameOf: (person: Participant) => string
 }) {
   const amounts = useMemo(() => {
     const byPair = new Map<string, number>()
@@ -39,9 +42,9 @@ export default function DebtsTableView({
               Должник
             </th>
             {participants.map((person) => (
-              <th key={person.id} className={styles.colHead} scope="col" title={person.name}>
+              <th key={person.id} className={styles.colHead} scope="col" title={nameOf(person)}>
                 <span aria-hidden="true">{person.emoji}</span>
-                <span style={{ position: 'absolute', left: -9999 }}>{person.name}</span>
+                <span style={{ position: 'absolute', left: -9999 }}>{nameOf(person)}</span>
               </th>
             ))}
           </tr>
@@ -50,7 +53,7 @@ export default function DebtsTableView({
           {participants.map((debtor) => (
             <tr key={debtor.id}>
               <th className={styles.rowHead} scope="row">
-                {debtor.emoji} {debtor.name}
+                {debtor.emoji} {nameOf(debtor)}
               </th>
               {participants.map((creditor) => {
                 if (debtor.id === creditor.id) {

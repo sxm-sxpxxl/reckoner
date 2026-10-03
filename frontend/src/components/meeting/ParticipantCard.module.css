@@ -56,3 +56,13 @@
   color: var(--ink);
 }
 
+.covers {
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+/* «платит Женя» — подпись, а не сумма: моноширинный шрифт ей ни к чему. */
+.payer {
+  font-family: inherit;
+  font-weight: 600;
+}

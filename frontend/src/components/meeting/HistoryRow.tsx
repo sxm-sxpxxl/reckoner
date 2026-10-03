@@ -1,7 +1,15 @@
-import type { Entry, Participant } from '../../api/types'
+import type { Entry, Participant, Share } from '../../api/types'
 import { formatLogTime, formatRubles } from '../../domain/format'
 import Avatar from '../ui/Avatar'
 import styles from './HistoryRow.module.css'
+
+/** Приписка к описанию расхода, если он делится не поровну на всех. */
+function splitNote(shares: Share[]): string {
+  if (shares.some((share) => share.rubles > 0)) return ' · точные суммы'
+  if (shares.length > 0) return ' · делят не все'
+
+  return ''
+}
 
 export default function HistoryRow({
   entry,
@@ -22,11 +30,7 @@ export default function HistoryRow({
   const isTransfer = entry.kind === 'transfer'
 
   const who = recipient ? `${payer?.name ?? '—'} → ${recipient.name}` : (payer?.name ?? '—')
-  const note = isTransfer
-    ? 'перевод в счёт долга'
-    : // Приписка появляется, когда у кого-то доля меньше полной. Сервер уже
-      // сказал это флагом — считать доли заново не нужно.
-      entry.description + (entry.sharedByAll ? '' : ' · делят не все')
+  const note = isTransfer ? 'перевод в счёт долга' : entry.description + splitNote(entry.shares)
 
   return (
     <div className={styles.row}>
