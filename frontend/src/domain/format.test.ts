@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatCardDate, formatLogTime, formatRubles, formatSigned } from './format'
+import { formatCardDate, formatLogTime, formatRubles, formatSigned, parseAmount } from './format'
 
 // Неразрывный пробел записан escape-последовательностью намеренно: от обычного
 // его глазами не отличить, и тест с обычным пробелом молча проверял бы не то.
@@ -52,5 +52,16 @@ describe('formatLogTime', () => {
     // Текст хендоффа говорит `дд.мм чч:мм` без неё, но скриншоты высокой
     // точности, и им верим.
     expect(formatLogTime(moment)).toBe('23.07, 21:05')
+  })
+})
+
+describe('parseAmount', () => {
+  it('отбрасывает копейки и говорит об этом', () => {
+    expect(parseAmount('1 250,50')).toEqual({ rubles: 1250, rounded: true })
+    expect(parseAmount('3425')).toEqual({ rubles: 3425, rounded: false })
+  })
+
+  it('пустое поле — не число', () => {
+    expect(Number.isNaN(parseAmount('').rubles)).toBe(true)
   })
 })

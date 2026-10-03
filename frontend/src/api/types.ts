@@ -17,8 +17,11 @@ export interface Participant extends ParticipantChip {
   position: number
   /** «внёс N ₽»: только оплаченные расходы, отправленные переводы не в счёт. */
   contributedRubles: number
-  /** Плюс — должны ему, минус — должен он. */
+  /** Баланс кошелька: плюс — должны ему, минус — должен он. У того, за кого
+   *  платят, всегда 0: его баланс прибавлен к балансу плательщика. */
   netRubles: number
+  /** Кто платит за участника; `null` — платит сам. */
+  paidById: string | null
 }
 
 export interface Share {

@@ -1,30 +1,23 @@
 /** Форматирование для показа. Все суммы — целые рубли: копеек в приложении нет. */
 
+import { parseAmountExpression } from './amountExpression'
+
 const RUBLES = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
 
 /**
- * Разбор введённой суммы.
+ * Разбор введённой суммы — `parseAmountExpression` без подсказок про позиции.
+ * Плюс работает и здесь: складывать при вводе перевода так же удобно, как
+ * при вводе расхода.
  *
- * Пробелы и запятая допускаются — так их и вводят. Копеек в приложении нет,
- * поэтому дробная часть отбрасывается, а `rounded` позволяет сказать об этом
- * вслух вместо того, чтобы молча потерять половину суммы.
- *
- * `rubles` — `NaN`, если ввод не число: вызывающий проверяет через
+ * Копеек в приложении нет, поэтому дробная часть отбрасывается, а `rounded`
+ * позволяет сказать об этом вслух вместо того, чтобы молча потерять половину
+ * суммы. `rubles` — `NaN`, если ввод не число: вызывающий проверяет через
  * `Number.isFinite`.
  */
 export function parseAmount(raw: string): { rubles: number; rounded: boolean } {
-  const normalized = raw.replace(/\s/g, '').replace(',', '.')
+  const { rubles, rounded } = parseAmountExpression(raw)
 
-  // `Number('')` — это 0, а пустое поле суммой считать нельзя.
-  if (normalized === '') return { rubles: NaN, rounded: false }
-
-  const value = Number(normalized)
-
-  if (!Number.isFinite(value)) return { rubles: NaN, rounded: false }
-
-  const rubles = Math.floor(value)
-
-  return { rubles, rounded: rubles !== value }
+  return { rubles, rounded }
 }
 
 /** `13 700 ₽`, разряды через неразрывный пробел. */
