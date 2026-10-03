@@ -1,41 +1,17 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::types::{Entry, FULL_QUARTERS, FixedShare, Participant, ParticipantId};
+use super::types::{Entry, FixedShare, Participant, ParticipantId};
 
-/// Доли одного расхода в целых рублях.
+/// Доли одного расхода в целых рублях — `split_amount` по сумме записи и её
+/// явным долям.
 ///
 /// Гарантия: при неотрицательной сумме и уникальных участниках сумма всех
 /// долей ровно равна `entry.amount`. На ней держится инвариант «сумма
 /// балансов равна нулю», а на нём — способность плана переводов закрыть
-/// встречу в ноль. Исключение — пустой список участников: в этом случае
-/// возвращается пустая карта независимо от суммы.
+/// встречу в ноль. Пустой список участников даёт пустую карту.
 pub fn expense_shares(entry: &Entry, participants: &[Participant]) -> BTreeMap<ParticipantId, i64> {
-    debug_assert!(
-        entry.amount >= 0,
-        "сумма расхода не может быть отрицательной: это гарантирует слой API"
-    );
-    debug_assert_unique(participants);
-
-    // Ранний выход для читаемости: дальше нечего делить, и карта пуста.
-    if participants.is_empty() {
-        return BTreeMap::new();
-    }
-
-    let mut weights: Vec<(Participant, i64)> = participants
-        .iter()
-        .map(|participant| (*participant, entry.quarters_for(participant.id)))
-        .collect();
-
-    // Расход, из которого исключили всех, спека требует делить на всех поровну.
-    // Иначе сумма весов была бы нулевой и делить было бы не по чему.
-    if weights.iter().all(|(_, quarters)| *quarters == 0) {
-        for (_, quarters) in &mut weights {
-            *quarters = FULL_QUARTERS;
-        }
-    }
-
-    distribute(entry.amount, &weights)
+    split_amount(entry.amount, participants, &entry.fixed)
 }
 
 /// Разбивка суммы расхода, когда у части участников вписаны точные суммы.
@@ -236,7 +212,7 @@ fn debug_assert_unique(participants: &[Participant]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::testing::{expense, expense_with_weights, participants, pin};
+    use crate::domain::testing::{expense, expense_with_fixed, participants, pin};
     use uuid::Uuid;
 
     #[test]
@@ -316,67 +292,6 @@ mod tests {
     }
 
     #[test]
-    fn respects_half_shares() {
-        let people = participants(3);
-        // Двое делят половину, один — полную долю: веса 4, 2, 2 из 8.
-        let entry = expense_with_weights(people[0], 100, &[(people[1], 2), (people[2], 2)]);
-
-        let shares = expense_shares(&entry, &people);
-
-        assert_eq!(shares[&people[0].id], 50);
-        assert_eq!(shares[&people[1].id], 25);
-        assert_eq!(shares[&people[2].id], 25);
-    }
-
-    #[test]
-    fn respects_three_quarter_share_with_remainder() {
-        let people = participants(2);
-        // Веса 4 и 3 из 7: точные доли 57.14 и 42.86.
-        let entry = expense_with_weights(people[0], 100, &[(people[1], 3)]);
-
-        let shares = expense_shares(&entry, &people);
-
-        // Дробная часть больше у второго (6/7 против 1/7), рубль его.
-        assert_eq!(shares[&people[0].id], 57);
-        assert_eq!(shares[&people[1].id], 43);
-        assert_eq!(shares.values().sum::<i64>(), 100);
-    }
-
-    #[test]
-    fn excluded_participant_never_pays_even_a_remainder_rouble() {
-        let people = participants(3);
-        // 101 на двоих, третий исключён: 51 / 50 / 0.
-        let entry = expense_with_weights(people[0], 101, &[(people[2], 0)]);
-
-        let shares = expense_shares(&entry, &people);
-
-        assert_eq!(shares[&people[2].id], 0);
-        assert_eq!(shares[&people[0].id], 51);
-        assert_eq!(shares[&people[1].id], 50);
-        assert_eq!(shares.values().sum::<i64>(), 101);
-    }
-
-    #[test]
-    fn falls_back_to_equal_split_when_everyone_is_excluded() {
-        let people = participants(3);
-        let entry = expense_with_weights(
-            people[0],
-            100,
-            &[(people[0], 0), (people[1], 0), (people[2], 0)],
-        );
-
-        let shares = expense_shares(&entry, &people);
-
-        // Спека: если сумма весов нулевая, расход делится на всех поровну.
-        // Сумма взята неделимая, чтобы откат прошёл через раздачу остатка,
-        // а не мимо неё.
-        assert_eq!(shares[&people[0].id], 34);
-        assert_eq!(shares[&people[1].id], 33);
-        assert_eq!(shares[&people[2].id], 33);
-        assert_eq!(shares.values().sum::<i64>(), 100);
-    }
-
-    #[test]
     fn shares_do_not_depend_on_participant_order() {
         let people = participants(3);
         let entry = expense(people[0], 100);
@@ -423,8 +338,8 @@ mod tests {
         assert_eq!(expense_shares(&full, &people)[&people[0].id], 101);
 
         // Даже если исключить единственного участника, платить всё равно ему:
-        // сумма весов нулевая, значит срабатывает откат.
-        let excluded = expense_with_weights(people[0], 101, &[(people[0], 0)]);
+        // вписаны одни нули, значит срабатывает правило «делим на всех».
+        let excluded = expense_with_fixed(people[0], 101, &[(people[0], 0)]);
         assert_eq!(expense_shares(&excluded, &people)[&people[0].id], 101);
     }
 

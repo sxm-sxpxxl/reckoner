@@ -23,7 +23,5 @@ pub use reckoning::{Reckoning, reckon};
 pub use settle::{Transfer, settlement_plan};
 pub use shares::{SplitProblem, check_split, expense_shares, split_amount};
 pub use status::MeetingStatus;
-pub use types::{
-    Entry, EntryKind, FULL_QUARTERS, FixedShare, MeetingFacts, Participant, ParticipantId, Weight,
-};
+pub use types::{Entry, EntryKind, FixedShare, MeetingFacts, Participant, ParticipantId};
 pub use wallets::{fold_into_wallets, wallet_of};

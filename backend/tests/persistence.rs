@@ -57,6 +57,35 @@ async fn migrations_apply_and_schema_is_queryable() {
 }
 
 #[tokio::test]
+async fn exact_shares_and_payers_are_in_the_schema() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+
+    let columns: Vec<(String, String)> = sqlx::query_as(
+        "select table_name::text, column_name::text from information_schema.columns \
+         where table_schema = 'public' and table_name in ('entry_shares', 'participants')",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .expect("список колонок");
+
+    let has = |table: &str, column: &str| {
+        columns
+            .iter()
+            .any(|(name, field)| name == table && field == column)
+    };
+    assert!(
+        has("entry_shares", "rubles"),
+        "нет entry_shares.rubles: {columns:?}"
+    );
+    assert!(
+        !has("entry_shares", "weight_quarters"),
+        "четверти остались в схеме"
+    );
+    assert!(has("participants", "paid_by"), "нет participants.paid_by");
+}
+
+#[tokio::test]
 async fn entry_kind_round_trips_through_a_text_column() {
     let pool = test_pool().await;
     let mut tx = support::begin(&pool).await;
@@ -309,7 +338,7 @@ async fn position_never_reuses_a_number_after_a_deletion() {
 }
 
 #[tokio::test]
-async fn stores_an_expense_with_partial_shares() {
+async fn stores_an_expense_with_fixed_shares() {
     let pool = test_pool().await;
     let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
@@ -331,7 +360,7 @@ async fn stores_an_expense_with_partial_shares() {
             amount_rubles: 8400,
             description: "Продукты на все дни".to_owned(),
             occurred_at: None,
-            shares: vec![(other.id, 2)],
+            shares: vec![(other.id, 2100)],
         },
     )
     .await
@@ -346,7 +375,36 @@ async fn stores_an_expense_with_partial_shares() {
         .expect("доли");
     assert_eq!(shares.len(), 1);
     assert_eq!(shares[0].participant_id, other.id);
-    assert_eq!(shares[0].weight_quarters, 2);
+    assert_eq!(shares[0].rubles, 2100);
+}
+
+#[tokio::test]
+async fn schema_rejects_a_negative_share() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let meeting_id = seed_meeting(&mut tx).await;
+
+    let payer = participants::insert(&mut tx, meeting_id, "Настя", "🦊")
+        .await
+        .expect("плательщик");
+
+    let result = entries::insert(
+        &mut tx,
+        meeting_id,
+        NewEntry {
+            kind: EntryKindRow::Expense,
+            payer_id: payer.id,
+            recipient_id: None,
+            amount_rubles: 100,
+            description: String::new(),
+            occurred_at: None,
+            shares: vec![(payer.id, -1)],
+        },
+    )
+    .await;
+
+    // Последняя линия: API отрицательные суммы не пропустит, но и CHECK тоже.
+    assert!(result.is_err(), "отрицательная доля записалась");
 }
 
 #[tokio::test]
@@ -591,7 +649,7 @@ async fn reckons_the_dacha_meeting_from_stored_rows() {
 }
 
 #[tokio::test]
-async fn maps_partial_shares_into_the_domain() {
+async fn maps_fixed_shares_into_the_domain() {
     let pool = test_pool().await;
     let mut tx = support::begin(&pool).await;
     let meeting_id = seed_meeting(&mut tx).await;
@@ -599,16 +657,14 @@ async fn maps_partial_shares_into_the_domain() {
     let payer = participants::insert(&mut tx, meeting_id, "Раз", "🐻")
         .await
         .expect("первый");
-    let half = participants::insert(&mut tx, meeting_id, "Два", "🦊")
+    let pinned = participants::insert(&mut tx, meeting_id, "Два", "🦊")
         .await
         .expect("второй");
     let excluded = participants::insert(&mut tx, meeting_id, "Три", "🐸")
         .await
         .expect("третий");
 
-    // Веса 4, 2, 0 из 6: целые части долей 66 и 33, распределено 99, остаток
-    // рубля уходит плательщику — у него дробная часть больше (4/6 против 2/6).
-    // Итоговые доли 67 / 33 / 0.
+    // Второму вписано 30, третий исключён — плательщик забирает остаток 70.
     entries::insert(
         &mut tx,
         meeting_id,
@@ -619,21 +675,19 @@ async fn maps_partial_shares_into_the_domain() {
             amount_rubles: 100,
             description: String::new(),
             occurred_at: None,
-            shares: vec![(half.id, 2), (excluded.id, 0)],
+            shares: vec![(pinned.id, 30), (excluded.id, 0)],
         },
     )
     .await
-    .expect("расход с долями");
+    .expect("расход с разбивкой");
 
     let stored = facts::load(&mut tx, meeting_id)
         .await
         .expect("чтение фактов");
     let reckoning = reckon(stored.as_facts());
 
-    // Заплатил 100, своя доля 67.
-    assert_eq!(reckoning.net[&ParticipantId(payer.id)], 33);
-    assert_eq!(reckoning.net[&ParticipantId(half.id)], -33);
-    // Исключённый не платит ничего, в том числе не получает рубль остатка.
+    assert_eq!(reckoning.net[&ParticipantId(payer.id)], 30);
+    assert_eq!(reckoning.net[&ParticipantId(pinned.id)], -30);
     assert_eq!(reckoning.net[&ParticipantId(excluded.id)], 0);
 }
 
@@ -660,7 +714,7 @@ async fn patches_amount_and_leaves_shares_alone() {
             amount_rubles: 1000,
             description: "опечатка".to_owned(),
             occurred_at: None,
-            shares: vec![(other.id, 2)],
+            shares: vec![(other.id, 300)],
         },
     )
     .await
@@ -688,7 +742,7 @@ async fn patches_amount_and_leaves_shares_alone() {
         .await
         .expect("доли");
     assert_eq!(shares.len(), 1);
-    assert_eq!(shares[0].weight_quarters, 2);
+    assert_eq!(shares[0].rubles, 300);
 }
 
 #[tokio::test]
@@ -717,7 +771,7 @@ async fn replaces_shares_wholesale_when_given() {
             amount_rubles: 900,
             description: String::new(),
             occurred_at: None,
-            shares: vec![(second.id, 2)],
+            shares: vec![(second.id, 300)],
         },
     )
     .await
@@ -741,7 +795,7 @@ async fn replaces_shares_wholesale_when_given() {
         .expect("доли");
     assert_eq!(shares.len(), 1);
     assert_eq!(shares[0].participant_id, third.id);
-    assert_eq!(shares[0].weight_quarters, 0);
+    assert_eq!(shares[0].rubles, 0);
 }
 
 #[tokio::test]
@@ -767,7 +821,7 @@ async fn empty_share_list_means_split_equally_again() {
             amount_rubles: 500,
             description: String::new(),
             occurred_at: None,
-            shares: vec![(other.id, 1)],
+            shares: vec![(other.id, 100)],
         },
     )
     .await
@@ -785,8 +839,8 @@ async fn empty_share_list_means_split_equally_again() {
     .expect("правка")
     .expect("запись существует");
 
-    // Пустой список — не то же самое, что `None`: он снимает все неполные доли,
-    // то есть возвращает расход к делению поровну.
+    // Пустой список — не то же самое, что `None`: он снимает разбивку, то есть
+    // возвращает расход к делению поровну.
     let shares = entries::shares_for_meeting(&mut tx, meeting_id)
         .await
         .expect("доли");

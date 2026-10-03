@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use super::records::{EntryKindRow, EntryRow, ParticipantRow, ShareRow};
 use super::{entries, participants};
-use crate::domain::{Entry, EntryKind, MeetingFacts, Participant, ParticipantId, Weight};
+use crate::domain::{Entry, EntryKind, FixedShare, MeetingFacts, Participant, ParticipantId};
 
 /// Владеющий аналог `MeetingFacts`: домен принимает срезы по ссылке, поэтому
 /// кому-то надо владеть векторами.
@@ -47,29 +47,16 @@ pub fn build(
     entry_rows: &[EntryRow],
     share_rows: &[ShareRow],
 ) -> StoredFacts {
-    let participants = participant_rows
-        .iter()
-        .map(|row| Participant {
-            id: ParticipantId(row.id),
-            position: row.position,
-            // Колонки `paid_by` в строке пока нет.
-            paid_by: None,
-        })
-        .collect();
+    let participants = participant_rows.iter().map(participant).collect();
 
-    let mut shares_by_entry: BTreeMap<Uuid, Vec<Weight>> = BTreeMap::new();
+    let mut shares_by_entry: BTreeMap<Uuid, Vec<FixedShare>> = BTreeMap::new();
     for share in share_rows {
         shares_by_entry
             .entry(share.entry_id)
             .or_default()
-            .push(Weight {
+            .push(FixedShare {
                 participant_id: ParticipantId(share.participant_id),
-                // Диапазон 0..=3 задан CHECK в схеме, поэтому преобразование
-                // не может не сойтись. Берём `try_from`, а не `as`: если схема
-                // и код однажды разойдутся, лучше упасть здесь, чем молча
-                // завернуть значение и испортить расчёт долей.
-                quarters: u8::try_from(share.weight_quarters)
-                    .expect("weight_quarters вне диапазона 0..=3 — схема и код разошлись"),
+                rubles: share.rubles,
             });
     }
 
@@ -83,12 +70,23 @@ pub fn build(
             payer_id: ParticipantId(row.payer_id),
             recipient_id: row.recipient_id.map(ParticipantId),
             amount: row.amount_rubles,
-            weights: shares_by_entry.remove(&row.id).unwrap_or_default(),
+            fixed: shares_by_entry.remove(&row.id).unwrap_or_default(),
         })
         .collect();
 
     StoredFacts {
         participants,
         entries,
+    }
+}
+
+/// Участник в терминах домена. Публичная: тем же отображением пользуется
+/// проверка разбивки в слое API.
+pub fn participant(row: &ParticipantRow) -> Participant {
+    Participant {
+        id: ParticipantId(row.id),
+        position: row.position,
+        // Колонка `paid_by` в строке пока не читается.
+        paid_by: None,
     }
 }

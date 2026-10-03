@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use super::types::{Entry, EntryKind, FixedShare, Participant, ParticipantId, Weight};
+use super::types::{Entry, EntryKind, FixedShare, Participant, ParticipantId};
 
 /// Участник с предсказуемым идентификатором: `participant(1)` всегда даёт
 /// один и тот же id, поэтому ожидания в тестах можно писать явно.
@@ -30,23 +30,16 @@ pub fn expense(payer: Participant, amount: i64) -> Entry {
         payer_id: payer.id,
         recipient_id: None,
         amount,
-        weights: Vec::new(),
+        fixed: Vec::new(),
     }
 }
 
-/// Расход с явными неполными долями: пары `(участник, четверти)`.
-pub fn expense_with_weights(
-    payer: Participant,
-    amount: i64,
-    weights: &[(Participant, u8)],
-) -> Entry {
+/// Расход с явными долями: пары `(участник, рубли)`, `0` — исключён.
+pub fn expense_with_fixed(payer: Participant, amount: i64, fixed: &[(Participant, i64)]) -> Entry {
     Entry {
-        weights: weights
+        fixed: fixed
             .iter()
-            .map(|(participant, quarters)| Weight {
-                participant_id: participant.id,
-                quarters: *quarters,
-            })
+            .map(|(participant, rubles)| pin(*participant, *rubles))
             .collect(),
         ..expense(payer, amount)
     }
@@ -59,7 +52,7 @@ pub fn transfer(from: Participant, to: Participant, amount: i64) -> Entry {
         payer_id: from.id,
         recipient_id: Some(to.id),
         amount,
-        weights: Vec::new(),
+        fixed: Vec::new(),
     }
 }
 

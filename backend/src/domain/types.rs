@@ -31,17 +31,6 @@ pub enum EntryKind {
     Transfer,
 }
 
-/// Полная доля участника, для которого явный вес не задан.
-pub const FULL_QUARTERS: i64 = 4;
-
-/// Доля участника в расходе в четвертях: 0, 1, 2 или 3.
-/// Полная доля (4/4) в списке не хранится — её отсутствие и есть полная доля.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Weight {
-    pub participant_id: ParticipantId,
-    pub quarters: u8,
-}
-
 /// Явная доля участника в расходе, в рублях. `0` — участник из расхода
 /// исключён. Участник без такой записи делит остаток поровну.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,10 +42,10 @@ pub struct FixedShare {
 /// Расход или перевод. Суммы — целые рубли, всегда больше нуля;
 /// это гарантирует слой API.
 ///
-/// Тип один в один повторяет строку таблицы `entries`, поэтому `recipient_id`
-/// заполнен только у перевода, а `weights` у перевода всегда пусто. Эти
-/// инварианты проверяются CHECK-constraint'ами в схеме базы, а не типами:
-/// домен получает уже провалидированные строки.
+/// Тип один в один повторяет строку таблицы `entries` вместе с её долями,
+/// поэтому `recipient_id` заполнен только у перевода, а `fixed` у перевода
+/// всегда пусто. Эти инварианты проверяются CHECK-constraint'ами в схеме
+/// базы, а не типами: домен получает уже провалидированные строки.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub kind: EntryKind,
@@ -64,19 +53,9 @@ pub struct Entry {
     /// Заполнен только у перевода.
     pub recipient_id: Option<ParticipantId>,
     pub amount: i64,
-    /// Только неполные доли. У перевода всегда пусто.
-    pub weights: Vec<Weight>,
-}
-
-impl Entry {
-    /// Вес участника в четвертях: явный, если задан, иначе полная доля.
-    pub fn quarters_for(&self, participant: ParticipantId) -> i64 {
-        self.weights
-            .iter()
-            .find(|weight| weight.participant_id == participant)
-            .map(|weight| i64::from(weight.quarters))
-            .unwrap_or(FULL_QUARTERS)
-    }
+    /// Явные доли расхода: вписанные суммы и исключённые участники (`0`).
+    /// Кого здесь нет, тот делит остаток поровну. У перевода всегда пусто.
+    pub fixed: Vec<FixedShare>,
 }
 
 /// Факты встречи — всё, что домену нужно для расчёта.

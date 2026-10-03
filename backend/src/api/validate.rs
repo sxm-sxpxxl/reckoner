@@ -5,11 +5,13 @@ use std::collections::BTreeSet;
 
 use uuid::Uuid;
 
+use crate::db::facts;
 use crate::db::records::ParticipantRow;
-use crate::domain::FULL_QUARTERS;
+use crate::domain::{FixedShare, ParticipantId, SplitProblem, check_split};
 
 use super::entries::ShareInput;
 use super::error::ApiError;
+use super::money::format_rubles;
 
 /// Имя без пробелов по краям. Пустое имя — ошибка, а не «безымянный участник»:
 /// такую карточку в интерфейсе не отличить от сбоя.
@@ -58,22 +60,21 @@ pub fn belongs_to_meeting<'a>(
         .ok_or_else(|| ApiError::validation(field, "участник не найден в этой встрече"))
 }
 
-/// Доли, приведённые к тому, что хранится в базе. `raw` — как прислал клиент.
-///
-/// Полная доля (4/4) отбрасывается: её отсутствие в таблице и есть полная доля,
-/// а хранить её значило бы держать одно и то же в двух видах.
+/// Явные доли, как их прислал клиент, в том виде, в каком они хранятся:
+/// пары `(участник, рубли)`. `0` — участник исключён из расхода. Кого в списке
+/// нет, тот делит остаток поровну.
 pub fn shares(
     raw: &[ShareInput],
     participants: &[ParticipantRow],
-) -> Result<Vec<(Uuid, i16)>, ApiError> {
+) -> Result<Vec<(Uuid, i64)>, ApiError> {
     let mut seen: BTreeSet<Uuid> = BTreeSet::new();
     let mut stored = Vec::with_capacity(raw.len());
 
     for share in raw {
-        if !(0..=FULL_QUARTERS).contains(&i64::from(share.weight_quarters)) {
+        if share.rubles < 0 {
             return Err(ApiError::validation(
                 "shares",
-                "доля задаётся четвертями от 0 до 4",
+                "сумма доли не может быть отрицательной",
             ));
         }
 
@@ -86,12 +87,41 @@ pub fn shares(
             ));
         }
 
-        if i64::from(share.weight_quarters) == FULL_QUARTERS {
-            continue;
-        }
-
-        stored.push((share.participant_id, share.weight_quarters));
+        stored.push((share.participant_id, share.rubles));
     }
 
     Ok(stored)
+}
+
+/// Правила ввода разбивки: вписанное не больше расхода, пока кто-то делит
+/// остаток, и не дальше четверти от него, если вписано у всех. Сам расчёт
+/// примет что угодно — это защита от опечаток.
+pub fn split(
+    amount: i64,
+    participants: &[ParticipantRow],
+    shares: &[(Uuid, i64)],
+) -> Result<(), ApiError> {
+    let people: Vec<_> = participants.iter().map(facts::participant).collect();
+    let fixed: Vec<FixedShare> = shares
+        .iter()
+        .map(|(participant_id, rubles)| FixedShare {
+            participant_id: ParticipantId(*participant_id),
+            rubles: *rubles,
+        })
+        .collect();
+
+    check_split(amount, &people, &fixed).map_err(|problem| match problem {
+        SplitProblem::PinnedOverAmount { pinned } => ApiError::validation(
+            "shares",
+            format!("вписано {} — больше, чем потрачено", format_rubles(pinned)),
+        ),
+        SplitProblem::PinnedFarFromAmount { pinned } => ApiError::validation(
+            "shares",
+            format!(
+                "вписано {} из {} — проверьте суммы",
+                format_rubles(pinned),
+                format_rubles(amount)
+            ),
+        ),
+    })
 }

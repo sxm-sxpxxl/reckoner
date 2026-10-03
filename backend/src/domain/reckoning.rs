@@ -60,7 +60,8 @@ pub fn reckon(facts: MeetingFacts) -> Reckoning {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::testing::{expense, paid_by, participants, transfer};
+    use crate::domain::Participant;
+    use crate::domain::testing::{expense, expense_with_fixed, paid_by, participants, transfer};
 
     #[test]
     fn reports_zeroes_without_participants() {
@@ -235,5 +236,102 @@ mod tests {
             ]
         );
         assert_eq!(reckoning.status, MeetingStatus::Attention(2));
+    }
+
+    /// Шестеро в порядке добавления: Катя, Алексей, Настя, Аня, Женя,
+    /// Вероника. Настя — в кошельке Алексея, Аня — в кошельке Жени.
+    fn restaurant() -> Vec<Participant> {
+        let people = participants(6);
+        let (alexey, zhenya) = (people[1], people[4]);
+        vec![
+            people[0],
+            alexey,
+            paid_by(people[2], alexey),
+            paid_by(people[3], zhenya),
+            zhenya,
+            people[5],
+        ]
+    }
+
+    #[test]
+    fn restaurant_bill_needs_three_transfers_to_the_payer() {
+        let people = restaurant();
+        let (katya, alexey, nastya, anya, zhenya, veronika) = (
+            people[0], people[1], people[2], people[3], people[4], people[5],
+        );
+        let entries = vec![expense_with_fixed(
+            zhenya,
+            11996,
+            &[
+                (katya, 2214),
+                (alexey, 3440),
+                (nastya, 0),
+                (anya, 0),
+                (zhenya, 3430),
+                (veronika, 2906),
+            ],
+        )];
+
+        let reckoning = reckon(MeetingFacts {
+            participants: &people,
+            entries: &entries,
+        });
+
+        assert_eq!(reckoning.net[&zhenya.id], 8564);
+        assert_eq!(reckoning.net[&anya.id], 0);
+        assert_eq!(reckoning.net[&nastya.id], 0);
+        assert_eq!(reckoning.net[&alexey.id], -3442);
+        assert_eq!(reckoning.net[&veronika.id], -2907);
+        assert_eq!(reckoning.net[&katya.id], -2215);
+        assert_eq!(
+            reckoning.settlement,
+            vec![
+                Transfer {
+                    from: alexey.id,
+                    to: zhenya.id,
+                    amount: 3442
+                },
+                Transfer {
+                    from: veronika.id,
+                    to: zhenya.id,
+                    amount: 2907
+                },
+                Transfer {
+                    from: katya.id,
+                    to: zhenya.id,
+                    amount: 2215
+                },
+            ]
+        );
+        assert_eq!(reckoning.status, MeetingStatus::Alarm(3));
+    }
+
+    #[test]
+    fn restaurant_plan_does_not_depend_on_how_a_couple_splits_their_part() {
+        let people = restaurant();
+        let (katya, alexey, nastya, anya, zhenya, veronika) = (
+            people[0], people[1], people[2], people[3], people[4], people[5],
+        );
+        let entries = vec![expense_with_fixed(
+            zhenya,
+            11996,
+            &[
+                (katya, 2214),
+                (alexey, 1720),
+                (nastya, 1720),
+                (anya, 0),
+                (zhenya, 3430),
+                (veronika, 2906),
+            ],
+        )];
+
+        let reckoning = reckon(MeetingFacts {
+            participants: &people,
+            entries: &entries,
+        });
+
+        assert_eq!(reckoning.net[&alexey.id], -3442);
+        assert_eq!(reckoning.net[&nastya.id], 0);
+        assert_eq!(reckoning.settlement.len(), 3);
     }
 }

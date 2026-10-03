@@ -53,6 +53,25 @@ async fn seed_dacha(conn: &mut sqlx::PgConnection) -> (Uuid, Vec<Uuid>) {
     (meeting.id, people)
 }
 
+/// Тело расхода с явными долями: пары `(участник, рубли)`, `0` — исключён.
+fn expense_body(payer: Uuid, amount: i64, shares: &[(Uuid, i64)]) -> api_entries::CreateEntry {
+    api_entries::CreateEntry {
+        kind: api_entries::EntryKindInput::Expense,
+        payer_id: payer,
+        recipient_id: None,
+        amount_rubles: amount,
+        description: String::new(),
+        occurred_at: None,
+        shares: shares
+            .iter()
+            .map(|(participant_id, rubles)| api_entries::ShareInput {
+                participant_id: *participant_id,
+                rubles: *rubles,
+            })
+            .collect(),
+    }
+}
+
 #[tokio::test]
 async fn blank_title_becomes_the_default_one() {
     let pool = test_pool().await;
@@ -683,7 +702,7 @@ async fn transfer_points_at_its_recipient() {
 }
 
 #[tokio::test]
-async fn partial_shares_are_stored_without_the_full_ones() {
+async fn fixed_shares_are_stored_as_sent() {
     let pool = test_pool().await;
     let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
@@ -691,45 +710,24 @@ async fn partial_shares_are_stored_without_the_full_ones() {
     let view = api_entries::add_entry(
         &mut tx,
         meeting_id,
-        api_entries::CreateEntry {
-            kind: api_entries::EntryKindInput::Expense,
-            payer_id: people[0],
-            recipient_id: None,
-            amount_rubles: 100,
-            description: "Пиво".to_owned(),
-            occurred_at: None,
-            shares: vec![
-                // Полная доля не хранится: её отсутствие и есть полная доля.
-                api_entries::ShareInput {
-                    participant_id: people[0],
-                    weight_quarters: 4,
-                },
-                api_entries::ShareInput {
-                    participant_id: people[1],
-                    weight_quarters: 2,
-                },
-                api_entries::ShareInput {
-                    participant_id: people[2],
-                    weight_quarters: 0,
-                },
-            ],
-        },
+        expense_body(people[0], 100, &[(people[1], 20), (people[2], 0)]),
     )
     .await
-    .expect("расход с долями");
+    .expect("расход с разбивкой");
 
     assert!(!view.entries[0].shared_by_all);
     assert_eq!(view.entries[0].shares.len(), 2);
-    assert!(
-        view.entries[0]
-            .shares
-            .iter()
-            .all(|share| share.participant_id != people[0]),
-        "полная доля не должна попадать в базу"
-    );
-    // Веса 1, ½, 0, 1 на 100 ₽ → 40, 20, 0, 40.
-    assert_eq!(view.participants[2].net_rubles, 0);
+    let pinned = view.entries[0]
+        .shares
+        .iter()
+        .find(|share| share.participant_id == people[1])
+        .expect("доля второго");
+    assert_eq!(pinned.rubles, 20);
+    // Второму 20, третий исключён, остаток 80 — первому и четвёртому по 40.
+    assert_eq!(view.participants[0].net_rubles, 60);
     assert_eq!(view.participants[1].net_rubles, -20);
+    assert_eq!(view.participants[2].net_rubles, 0);
+    assert_eq!(view.participants[3].net_rubles, -40);
 }
 
 #[tokio::test]
@@ -853,7 +851,7 @@ async fn transfer_with_shares_is_rejected() {
             occurred_at: None,
             shares: vec![api_entries::ShareInput {
                 participant_id: people[2],
-                weight_quarters: 2,
+                rubles: 20,
             }],
         },
     )
@@ -910,11 +908,11 @@ async fn duplicate_share_is_rejected() {
             shares: vec![
                 api_entries::ShareInput {
                     participant_id: people[1],
-                    weight_quarters: 2,
+                    rubles: 20,
                 },
                 api_entries::ShareInput {
                     participant_id: people[1],
-                    weight_quarters: 1,
+                    rubles: 10,
                 },
             ],
         },
@@ -926,7 +924,7 @@ async fn duplicate_share_is_rejected() {
 }
 
 #[tokio::test]
-async fn share_out_of_range_is_rejected() {
+async fn negative_share_is_rejected() {
     let pool = test_pool().await;
     let mut tx = support::begin(&pool).await;
     let (meeting_id, people) = seed_dacha(&mut tx).await;
@@ -943,12 +941,12 @@ async fn share_out_of_range_is_rejected() {
             occurred_at: None,
             shares: vec![api_entries::ShareInput {
                 participant_id: people[1],
-                weight_quarters: 5,
+                rubles: -5,
             }],
         },
     )
     .await
-    .expect_err("доля больше полной");
+    .expect_err("отрицательная доля");
 
     assert_eq!(validation_field(&error), "shares");
 }
@@ -1017,7 +1015,7 @@ async fn patch_replaces_shares_wholesale() {
             occurred_at: None,
             shares: Some(vec![api_entries::ShareInput {
                 participant_id: people[3],
-                weight_quarters: 0,
+                rubles: 0,
             }]),
         },
     )
@@ -1027,7 +1025,7 @@ async fn patch_replaces_shares_wholesale() {
     assert_eq!(view.entries[0].amount_rubles, 1000);
     assert_eq!(view.entries[0].description, "Мясо");
     assert!(!view.entries[0].shared_by_all);
-    // 1000 на трёх с полной долей → 334 / 333 / 333, четвёртый не платит.
+    // 1000 на трёх, четвёртый исключён → 334 / 333 / 333.
     assert_eq!(view.participants[3].net_rubles, 0);
     assert_eq!(view.log[0].text, "Запись изменена: 1\u{a0}000\u{a0}₽");
 }
@@ -1498,4 +1496,120 @@ async fn blank_filters_are_treated_as_absent() {
     .expect("список встреч");
 
     assert!(cards.iter().any(|card| card.id == meeting_id));
+}
+
+#[tokio::test]
+async fn pins_over_the_amount_are_rejected_while_someone_splits_the_rest() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        expense_body(people[0], 1000, &[(people[1], 1200)]),
+    )
+    .await
+    .expect_err("вписано больше расхода");
+
+    assert_eq!(validation_field(&error), "shares");
+}
+
+#[tokio::test]
+async fn pins_far_from_the_amount_are_rejected() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    // Вписано у всех 1 600 при расходе 1 000 — расхождение больше четверти.
+    let error = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        expense_body(
+            people[0],
+            1000,
+            &[
+                (people[0], 400),
+                (people[1], 400),
+                (people[2], 400),
+                (people[3], 400),
+            ],
+        ),
+    )
+    .await
+    .expect_err("расхождение больше четверти");
+
+    assert_eq!(validation_field(&error), "shares");
+}
+
+#[tokio::test]
+async fn shortfall_within_a_quarter_is_spread_in_proportion() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+
+    let view = api_entries::add_entry(
+        &mut tx,
+        meeting_id,
+        expense_body(
+            people[0],
+            1000,
+            &[
+                (people[0], 250),
+                (people[1], 250),
+                (people[2], 250),
+                (people[3], 240),
+            ],
+        ),
+    )
+    .await
+    .expect("расхождение в 10 ₽ допустимо");
+
+    // Доли 253 / 253 / 252 / 242: два рубля остатка — первым двум по position.
+    assert_eq!(view.participants[0].net_rubles, 747);
+    assert_eq!(view.participants[1].net_rubles, -253);
+    assert_eq!(view.participants[2].net_rubles, -252);
+    assert_eq!(view.participants[3].net_rubles, -242);
+}
+
+#[tokio::test]
+async fn patching_only_the_amount_checks_the_stored_shares() {
+    let pool = test_pool().await;
+    let mut tx = support::begin(&pool).await;
+    let (meeting_id, people) = seed_dacha(&mut tx).await;
+    let entry_id = db::entries::insert(
+        &mut tx,
+        meeting_id,
+        db::entries::NewEntry {
+            kind: db::records::EntryKindRow::Expense,
+            payer_id: people[0],
+            recipient_id: None,
+            amount_rubles: 400,
+            description: "Продукты".to_owned(),
+            occurred_at: None,
+            shares: vec![(people[1], 300)],
+        },
+    )
+    .await
+    .expect("вставка расхода")
+    .id;
+
+    // Второму вписано 300; сумма 200 сделала бы вписанное больше расхода.
+    let error = api_entries::update_entry(
+        &mut tx,
+        meeting_id,
+        entry_id,
+        api_entries::UpdateEntry {
+            payer_id: None,
+            recipient_id: None,
+            amount_rubles: Some(200),
+            description: None,
+            occurred_at: None,
+            shares: None,
+        },
+    )
+    .await
+    .expect_err("сумма меньше вписанного");
+
+    assert_eq!(validation_field(&error), "shares");
 }

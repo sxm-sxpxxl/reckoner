@@ -2,9 +2,9 @@
 
 use proptest::prelude::*;
 
-use super::testing::{expense_with_weights, participant, transfer};
-use super::types::{Entry, MeetingFacts, Participant};
-use super::{fold_into_wallets, net_balances, settlement_plan, wallet_of};
+use super::testing::{expense_with_fixed, participant, transfer};
+use super::types::{Entry, EntryKind, MeetingFacts, Participant};
+use super::{expense_shares, fold_into_wallets, net_balances, settlement_plan, wallet_of};
 
 /// Черновик записи в терминах индексов участников. Proptest генерирует любые
 /// индексы, а `build` приводит их к существующим по модулю — так любой
@@ -14,7 +14,9 @@ enum Draft {
     Expense {
         payer: usize,
         amount: i64,
-        quarters: Vec<u8>,
+        /// По участнику: `None` — делит остаток поровну, `Some(0)` —
+        /// исключён, `Some(n)` — вписано `n`.
+        pins: Vec<Option<i64>>,
     },
     Transfer {
         from: usize,
@@ -28,12 +30,14 @@ fn draft_strategy() -> impl Strategy<Value = Draft> {
         (
             0usize..64,
             1i64..1_000_000,
-            prop::collection::vec(0u8..=4, 1..8),
+            // Чаще вписано, чем пусто: иначе правило пропорции срабатывало бы
+            // редко — оно требует, чтобы вписано было у всех.
+            prop::collection::vec(prop::option::weighted(0.6, 0i64..1_000_000), 1..8),
         )
-            .prop_map(|(payer, amount, quarters)| Draft::Expense {
+            .prop_map(|(payer, amount, pins)| Draft::Expense {
                 payer,
                 amount,
-                quarters,
+                pins,
             }),
         (0usize..64, 0usize..64, 1i64..1_000_000).prop_map(|(from, to, amount)| Draft::Transfer {
             from,
@@ -78,22 +82,16 @@ fn build(people: &[Participant], drafts: &[Draft]) -> Vec<Entry> {
             Draft::Expense {
                 payer,
                 amount,
-                quarters,
+                pins,
             } => {
-                // Полная доля (4/4) в списке весов не хранится.
-                let weights: Vec<(Participant, u8)> = people
+                let fixed: Vec<(Participant, i64)> = people
                     .iter()
                     .enumerate()
                     .filter_map(|(index, person)| {
-                        let quarter = quarters[index % quarters.len()];
-                        (quarter < 4).then_some((*person, quarter))
+                        pins[index % pins.len()].map(|rubles| (*person, rubles))
                     })
                     .collect();
-                Some(expense_with_weights(
-                    people[*payer % count],
-                    *amount,
-                    &weights,
-                ))
+                Some(expense_with_fixed(people[*payer % count], *amount, &fixed))
             }
             Draft::Transfer { from, to, amount } => {
                 let sender = *from % count;
@@ -105,8 +103,60 @@ fn build(people: &[Participant], drafts: &[Draft]) -> Vec<Entry> {
         .collect()
 }
 
+fn expenses(entries: &[Entry]) -> impl Iterator<Item = &Entry> {
+    entries
+        .iter()
+        .filter(|entry| entry.kind == EntryKind::Expense)
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// Сумма долей каждого расхода равна самому расходу при любой смеси
+    /// «поровну», вписанных сумм и исключённых, и доли не отрицательны.
+    #[test]
+    fn shares_add_up_to_every_expense(
+        count in 1usize..8,
+        drafts in prop::collection::vec(draft_strategy(), 0..12),
+    ) {
+        let people = roster(count, &[None]);
+        let entries = build(&people, &drafts);
+
+        for entry in expenses(&entries) {
+            let shares = expense_shares(entry, &people);
+            prop_assert_eq!(shares.values().sum::<i64>(), entry.amount);
+            prop_assert!(shares.values().all(|share| *share >= 0));
+        }
+    }
+
+    /// Пока кто-то делит остаток и вписано не больше расхода, вписанные платят
+    /// ровно вписанное: округление их не касается.
+    #[test]
+    fn pinned_amounts_are_exact_while_someone_splits_the_rest(
+        count in 1usize..8,
+        drafts in prop::collection::vec(draft_strategy(), 0..12),
+    ) {
+        let people = roster(count, &[None]);
+        let entries = build(&people, &drafts);
+
+        for entry in expenses(&entries) {
+            let pinned: i64 = entry.fixed.iter().map(|share| share.rubles).sum();
+            let someone_even = people.iter().any(|person| {
+                entry
+                    .fixed
+                    .iter()
+                    .all(|share| share.participant_id != person.id)
+            });
+            if !someone_even || pinned > entry.amount {
+                continue;
+            }
+
+            let shares = expense_shares(entry, &people);
+            for share in &entry.fixed {
+                prop_assert_eq!(shares[&share.participant_id], share.rubles);
+            }
+        }
+    }
 
     /// Сумма балансов всегда ноль — и до свёртки по кошелькам, и после.
     /// Инвариант обеспечивает целочисленная раздача остатка долей, свёртка

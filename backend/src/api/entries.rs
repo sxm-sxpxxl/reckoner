@@ -35,13 +35,13 @@ impl From<EntryKindInput> for EntryKindRow {
     }
 }
 
-/// Доля участника в расходе, как её присылает клиент: `0..=4` четвертей.
-/// Четыре — полная доля; в базу она не попадает.
+/// Явная доля участника, как её присылает клиент: точная сумма в рублях или
+/// `0`, если участник исключён. Кого в списке нет, тот делит остаток поровну.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShareInput {
     pub participant_id: Uuid,
-    pub weight_quarters: i16,
+    pub rubles: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -72,6 +72,9 @@ pub async fn add_entry(
     let payer = validate::belongs_to_meeting(&participants, body.payer_id, "payerId")?.clone();
     let recipient = check_recipient(&participants, body.kind, body.payer_id, body.recipient_id)?;
     let shares = check_shares(&participants, body.kind, &body.shares)?;
+    if body.kind == EntryKindInput::Expense {
+        validate::split(amount, &participants, &shares)?;
+    }
     let description = normalize_description(body.kind, &body.description);
 
     db::entries::insert(
@@ -138,7 +141,7 @@ fn check_shares(
     participants: &[ParticipantRow],
     kind: EntryKindInput,
     raw: &[ShareInput],
-) -> Result<Vec<(Uuid, i16)>, ApiError> {
+) -> Result<Vec<(Uuid, i64)>, ApiError> {
     if kind == EntryKindInput::Transfer && !raw.is_empty() {
         return Err(ApiError::validation("shares", "перевод не делится на доли"));
     }
@@ -169,8 +172,8 @@ pub struct UpdateEntry {
     pub amount_rubles: Option<i64>,
     pub description: Option<String>,
     pub occurred_at: Option<DateTime<Utc>>,
-    /// `None` — доли не трогать. `Some(vec![])` — снять все неполные доли,
-    /// то есть вернуть расход к делению поровну.
+    /// `None` — доли не трогать. `Some(vec![])` — снять разбивку, то есть
+    /// вернуть расход к делению поровну на всех.
     pub shares: Option<Vec<ShareInput>>,
 }
 
@@ -233,6 +236,25 @@ pub async fn update_entry(
         }
         None => None,
     };
+
+    // Разбивку проверяем по тому, что получится после правки: сумму могли
+    // поменять без долей, и прежние доли перестали бы ей соответствовать.
+    if !is_transfer && (amount.is_some() || shares.is_some()) {
+        let effective = match &shares {
+            Some(list) => list.clone(),
+            None => db::entries::shares_for_entry(&mut *conn, entry_id)
+                .await?
+                .iter()
+                .map(|row| (row.participant_id, row.rubles))
+                .collect(),
+        };
+
+        validate::split(
+            amount.unwrap_or(current.amount_rubles),
+            &participants,
+            &effective,
+        )?;
+    }
 
     let kind = if is_transfer {
         EntryKindInput::Transfer

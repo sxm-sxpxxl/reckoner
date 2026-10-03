@@ -55,7 +55,8 @@ pub struct EntryRow {
 pub struct ShareRow {
     pub entry_id: Uuid,
     pub participant_id: Uuid,
-    pub weight_quarters: i16,
+    /// `0` — участник исключён из расхода, больше нуля — вписанная сумма.
+    pub rubles: i64,
 }
 
 #[derive(Debug, Clone, FromRow)]

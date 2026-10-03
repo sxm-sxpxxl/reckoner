@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use super::records::{EntryKindRow, EntryRow, ShareRow};
 
-/// Новая запись вместе с неполными долями. Полная доля (4/4) в `shares` не
-/// передаётся: её отсутствие и есть полная доля.
+/// Новая запись вместе с явными долями. Кто делит остаток поровну, в `shares`
+/// не передаётся: отсутствие строки и есть «поровну».
 #[derive(Debug, Clone)]
 pub struct NewEntry {
     pub kind: EntryKindRow,
@@ -15,8 +15,8 @@ pub struct NewEntry {
     pub description: String,
     /// `None` — «сейчас». Явное значение нужно тестам и импорту.
     pub occurred_at: Option<DateTime<Utc>>,
-    /// Пары `(участник, четверти)`, только для неполных долей.
-    pub shares: Vec<(Uuid, i16)>,
+    /// Пары `(участник, рубли)`: вписанные суммы и исключённые (`0`).
+    pub shares: Vec<(Uuid, i64)>,
 }
 
 /// Вставляет запись и её доли. Вызывающий обязан передать транзакцию: запись
@@ -43,14 +43,14 @@ pub async fn insert(
     .fetch_one(&mut *conn)
     .await?;
 
-    for (participant_id, weight_quarters) in entry.shares {
+    for (participant_id, rubles) in entry.shares {
         sqlx::query(
-            "insert into entry_shares (entry_id, participant_id, weight_quarters) \
+            "insert into entry_shares (entry_id, participant_id, rubles) \
              values ($1, $2, $3)",
         )
         .bind(row.id)
         .bind(participant_id)
-        .bind(weight_quarters)
+        .bind(rubles)
         .execute(&mut *conn)
         .await?;
     }
@@ -85,13 +85,25 @@ pub async fn shares_for_meeting(
     meeting_id: Uuid,
 ) -> Result<Vec<ShareRow>, sqlx::Error> {
     sqlx::query_as(
-        "select s.entry_id, s.participant_id, s.weight_quarters \
+        "select s.entry_id, s.participant_id, s.rubles \
          from entry_shares s join entries e on e.id = s.entry_id \
          where e.meeting_id = $1",
     )
     .bind(meeting_id)
     .fetch_all(conn)
     .await
+}
+
+/// Доли одной записи — чтобы проверить разбивку, когда правка меняет только
+/// сумму расхода.
+pub async fn shares_for_entry(
+    conn: &mut PgConnection,
+    entry_id: Uuid,
+) -> Result<Vec<ShareRow>, sqlx::Error> {
+    sqlx::query_as("select entry_id, participant_id, rubles from entry_shares where entry_id = $1")
+        .bind(entry_id)
+        .fetch_all(conn)
+        .await
 }
 
 /// Записи сразу нескольких встреч — для списка встреч. Порядок внутри встречи
@@ -119,7 +131,7 @@ pub async fn shares_for_meetings(
     meeting_ids: &[Uuid],
 ) -> Result<Vec<ShareRow>, sqlx::Error> {
     sqlx::query_as(
-        "select s.entry_id, s.participant_id, s.weight_quarters \
+        "select s.entry_id, s.participant_id, s.rubles \
          from entry_shares s join entries e on e.id = s.entry_id \
          where e.meeting_id = any($1)",
     )
@@ -142,10 +154,10 @@ pub struct EntryPatch {
     pub amount_rubles: Option<i64>,
     pub description: Option<String>,
     pub occurred_at: Option<DateTime<Utc>>,
-    /// `None` — доли не трогать. `Some(vec![])` — снять все неполные доли,
-    /// то есть вернуть расход к делению поровну. Переданный список заменяет
+    /// `None` — доли не трогать. `Some(vec![])` — снять разбивку, то есть
+    /// вернуть расход к делению поровну на всех. Переданный список заменяет
     /// прежний целиком, а не дополняет его.
-    pub shares: Option<Vec<(Uuid, i16)>>,
+    pub shares: Option<Vec<(Uuid, i64)>>,
 }
 
 /// Правка долей — это удаление и вставка заново, поэтому вызывающий обязан
@@ -187,14 +199,14 @@ pub async fn update(
             .execute(&mut *conn)
             .await?;
 
-        for (participant_id, weight_quarters) in shares {
+        for (participant_id, rubles) in shares {
             sqlx::query(
-                "insert into entry_shares (entry_id, participant_id, weight_quarters) \
+                "insert into entry_shares (entry_id, participant_id, rubles) \
                  values ($1, $2, $3)",
             )
             .bind(row.id)
             .bind(participant_id)
-            .bind(weight_quarters)
+            .bind(rubles)
             .execute(&mut *conn)
             .await?;
         }

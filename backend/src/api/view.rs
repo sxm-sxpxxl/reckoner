@@ -87,8 +87,9 @@ pub struct EntryView {
     pub description: String,
     pub occurred_at: DateTime<Utc>,
     pub shares: Vec<ShareView>,
-    /// `false`, если у кого-то доля меньше полной. В базе хранятся только
-    /// неполные доли, поэтому флаг — это ровно «список долей пуст».
+    /// `false`, если разбивка задана хоть у кого-то: вписана сумма или участник
+    /// исключён. Строки хранятся только у таких участников, поэтому флаг —
+    /// это ровно «список долей пуст».
     pub shared_by_all: bool,
 }
 
@@ -103,7 +104,8 @@ pub enum EntryKindView {
 #[serde(rename_all = "camelCase")]
 pub struct ShareView {
     pub participant_id: Uuid,
-    pub weight_quarters: i16,
+    /// `0` — исключён из расхода, больше нуля — вписанная сумма.
+    pub rubles: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -279,7 +281,7 @@ fn group_shares(shares: &[ShareRow]) -> BTreeMap<Uuid, Vec<ShareView>> {
     for share in shares {
         grouped.entry(share.entry_id).or_default().push(ShareView {
             participant_id: share.participant_id,
-            weight_quarters: share.weight_quarters,
+            rubles: share.rubles,
         });
     }
 
@@ -408,9 +410,9 @@ mod tests {
     }
 
     #[test]
-    fn partial_share_clears_the_shared_by_all_flag() {
-        // В базе лежат только неполные доли, поэтому любая строка в `entry_shares`
-        // означает «делят не все» — фронт по этому флагу приписывает подпись.
+    fn fixed_share_clears_the_shared_by_all_flag() {
+        // Строка в `entry_shares` есть только у тех, у кого разбивка задана,
+        // поэтому любая строка означает «делят не все поровну».
         let meeting_id = Uuid::from_u128(2);
         let (first, second) = (Uuid::from_u128(31), Uuid::from_u128(32));
         let entry_id = Uuid::from_u128(41);
@@ -423,7 +425,7 @@ mod tests {
         let shares = vec![ShareRow {
             entry_id,
             participant_id: second,
-            weight_quarters: 2,
+            rubles: 30,
         }];
 
         let view = meeting_view(&meeting, &participants, &entries, &shares, &[]);
@@ -432,11 +434,11 @@ mod tests {
         assert_eq!(json["entries"][0]["sharedByAll"], false);
         assert_eq!(
             json["entries"][0]["shares"],
-            serde_json::json!([{ "participantId": second.to_string(), "weightQuarters": 2 }])
+            serde_json::json!([{ "participantId": second.to_string(), "rubles": 30 }])
         );
-        // 100 ₽ при весах 1 и ½ — это 67 и 33; заплатил первый, значит второй
-        // должен ему свои 33.
-        assert_eq!(json["participants"][1]["netRubles"], -33);
+        // Второму вписано 30, первый забирает остаток 70; заплатил первый,
+        // значит второй должен ему свои 30.
+        assert_eq!(json["participants"][1]["netRubles"], -30);
         assert_eq!(json["totals"]["pendingTransfers"], 1);
         assert_eq!(json["status"], "attention");
     }
