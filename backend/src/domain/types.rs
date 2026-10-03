@@ -38,6 +38,14 @@ pub struct Weight {
     pub quarters: u8,
 }
 
+/// Явная доля участника в расходе, в рублях. `0` — участник из расхода
+/// исключён. Участник без такой записи делит остаток поровну.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixedShare {
+    pub participant_id: ParticipantId,
+    pub rubles: i64,
+}
+
 /// Расход или перевод. Суммы — целые рубли, всегда больше нуля;
 /// это гарантирует слой API.
 ///

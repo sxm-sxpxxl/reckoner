@@ -20,8 +20,8 @@ pub mod testing;
 pub use balance::{contributions, net_balances};
 pub use reckoning::{Reckoning, reckon};
 pub use settle::{Transfer, settlement_plan};
-pub use shares::expense_shares;
+pub use shares::{SplitProblem, check_split, expense_shares, split_amount};
 pub use status::MeetingStatus;
 pub use types::{
-    Entry, EntryKind, FULL_QUARTERS, MeetingFacts, Participant, ParticipantId, Weight,
+    Entry, EntryKind, FULL_QUARTERS, FixedShare, MeetingFacts, Participant, ParticipantId, Weight,
 };

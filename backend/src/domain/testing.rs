@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use super::types::{Entry, EntryKind, Participant, ParticipantId, Weight};
+use super::types::{Entry, EntryKind, FixedShare, Participant, ParticipantId, Weight};
 
 /// Участник с предсказуемым идентификатором: `participant(1)` всегда даёт
 /// один и тот же id, поэтому ожидания в тестах можно писать явно.
@@ -59,5 +59,13 @@ pub fn transfer(from: Participant, to: Participant, amount: i64) -> Entry {
         recipient_id: Some(to.id),
         amount,
         weights: Vec::new(),
+    }
+}
+
+/// Явная доля участника: вписанная сумма или `0`, если он исключён.
+pub fn pin(participant: Participant, rubles: i64) -> FixedShare {
+    FixedShare {
+        participant_id: participant.id,
+        rubles,
     }
 }
